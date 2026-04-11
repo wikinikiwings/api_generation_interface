@@ -1,0 +1,2 @@
+# Keep this directory in git.
+# Generated images are written here at runtime and ignored via .gitignore.

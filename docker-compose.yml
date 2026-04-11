@@ -1,0 +1,27 @@
+services:
+  wavespeed-claude:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: wavespeed-claude:latest
+    container_name: wavespeed-claude
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      # Внутри контейнера БД и картинки лежат тут.
+      # Хост-путь монтируется ниже в volumes.
+      HISTORY_DATA_DIR: /data
+      NODE_ENV: production
+    volumes:
+      # Windows-хост: маппим C:\viewcomfy_data\database -> /data
+      # Linux-хост: замените на /opt/viewcomfy_data:/data
+      - C:/viewcomfy_data/database:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

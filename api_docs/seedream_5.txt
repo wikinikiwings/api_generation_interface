@@ -1,0 +1,560 @@
+- wavespeed 
+Bytedance Seedream-v5 Edit
+
+Bytedance Seedream-v5.0-lite Edit
+Seedream 5.0 Lite Edit by is a state-of-the-art image editing model preserving facial features, lighting, and color tones from reference images. Features high-fidelity editing with professional quality, superior prompt adherence, and up to 4K resolution. Ready-to-use REST inference API, best performance, no coldstarts, affordable pricing.
+
+1. Calling the API
+Submit a request
+The client handles polling automatically and returns the result when complete.
+
+
+curl -X POST "https://api.wavespeed.ai/api/v3/bytedance/seedream-v5.0-lite/edit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WAVESPEED_API_KEY" \
+  -d '{
+    "enable_base64_output": false,
+    "enable_sync_mode": false,
+    "images": [
+        "https://static.wavespeed.ai/examples/0a250eead8c24aa4ac3b8c0333abb0c2/1774351088186796001_em96xShI.jpeg"
+    ],
+    "prompt": "Transform the entire scene into a miniature tilt-shift diorama. Make the subject look like a hand-painted figurine with visible brush strokes on the skin. Add a wooden display base beneath the scene. Shift the lighting to warm studio spotlights from above. Make all textures look like craft materials — felt, clay, and balsa wood."
+}'
+
+2. Authentication
+The API uses an API Key for authentication.
+
+Get your API Key
+Get your API key from https://wavespeed.ai/accesskey.
+
+Environment variable
+export WAVESPEED_API_KEY="your-api-key"
+
+3. Queue & Webhooks
+For long-running requests, you can either poll for results or use webhooks.
+
+Submit request
+# Without webhook (poll for results)
+curl -X POST "https://api.wavespeed.ai/api/v3/bytedance/seedream-v5.0-lite/edit" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WAVESPEED_API_KEY" \
+  -d '{
+    "enable_base64_output": false,
+    "enable_sync_mode": false,
+    "images": [
+        "https://static.wavespeed.ai/examples/0a250eead8c24aa4ac3b8c0333abb0c2/1774351088186796001_em96xShI.jpeg"
+    ],
+    "prompt": "Transform the entire scene into a miniature tilt-shift diorama. Make the subject look like a hand-painted figurine with visible brush strokes on the skin. Add a wooden display base beneath the scene. Shift the lighting to warm studio spotlights from above. Make all textures look like craft materials — felt, clay, and balsa wood."
+}'
+
+### With webhook (receive notification)
+curl -X POST "https://api.wavespeed.ai/api/v3/bytedance/seedream-v5.0-lite/edit?webhook=https://your.app/endpoint" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WAVESPEED_API_KEY" \
+  -d '{
+    "enable_base64_output": false,
+    "enable_sync_mode": false,
+    "images": [
+        "https://static.wavespeed.ai/examples/0a250eead8c24aa4ac3b8c0333abb0c2/1774351088186796001_em96xShI.jpeg"
+    ],
+    "prompt": "Transform the entire scene into a miniature tilt-shift diorama. Make the subject look like a hand-painted figurine with visible brush strokes on the skin. Add a wooden display base beneath the scene. Shift the lighting to warm studio spotlights from above. Make all textures look like craft materials — felt, clay, and balsa wood."
+}'
+
+Response
+{
+    "id": "abc123-def456-...",
+    "status": "pending"
+}
+
+Get the result
+Polling
+# Check status
+curl -X GET "https://api.wavespeed.ai/api/v3/predictions/{request_id}" \
+  -H "Authorization: Bearer $WAVESPEED_API_KEY"
+
+# Response: {"id": "...", "status": "processing"}
+# Possible status: pending, processing, completed, failed
+
+# Get result (when status is "completed")
+curl -X GET "https://api.wavespeed.ai/api/v3/predictions/{request_id}/result" \
+  -H "Authorization: Bearer $WAVESPEED_API_KEY"
+
+Webhook
+If you added ?webhook=<your_url> when submitting, WaveSpeed sends a POST to your URL when the task completes:
+
+{
+    "id": "<task_id>",
+    "model": "bytedance/seedream-v5.0-lite/edit",
+    "input": {
+        "enable_base64_output": false,
+        "enable_sync_mode": false,
+        "images": [
+                "https://static.wavespeed.ai/examples/0a250eead8c24aa4ac3b8c0333abb0c2/1774351088186796001_em96xShI.jpeg"
+        ],
+        "prompt": "Transform the entire scene into a miniature tilt-shift diorama. Make the subject look like a hand-painted figurine with visible brush strokes on the skin. Add a wooden display base beneath the scene. Shift the lighting to warm studio spotlights from above. Make all textures look like craft materials — felt, clay, and balsa wood."
+    },
+    "outputs": ["<output_url>"],
+    "status": "completed",
+    "created_at": "<timestamp>",
+    "error": null
+}
+
+Field	Description
+id	Task ID
+outputs	Array of output URLs (only when status: "completed")
+status	completed or failed
+error	Error message (only when status: "failed")
+Best practices:
+Use HTTPS endpoint
+Return 2xx immediately
+Implement idempotency
+Verify signatures (see below)
+📖 For more details, see Get Result | Webhooks.
+
+4. Verifying Webhooks
+Always verify webhook signatures to ensure requests are from WaveSpeed.
+
+Webhook headers
+Each webhook request includes these headers:
+
+Header	Description
+webhook-id	Unique identifier for this webhook delivery
+webhook-timestamp	Unix timestamp when the webhook was sent
+webhook-signature	Signature in format v3,<hex_signature>
+Signature computation
+HMAC_SHA256(secret_without_prefix, "{webhook-id}.{webhook-timestamp}.{raw_body}")
+
+⚠️ Important: Remove the whsec_ prefix from your webhook secret before using it as the HMAC key. Do NOT base64 decode it.
+
+5. Files
+The images and mask_image parameters accept file URLs or Base64 data URIs.
+
+Public URL
+Pass publicly accessible URLs directly:
+
+
+{
+    "images": ["https://example.com/image.png"],
+    "mask_image": "https://example.com/mask.png"
+}
+
+Base64 data URI
+Embed images as Base64:
+
+
+{
+    "images": ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."],
+    "mask_image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
+}
+
+Upload API
+Upload local files to get a URL.
+
+Endpoint:
+
+POST https://api.wavespeed.ai/api/v3/media/upload/binary
+
+Request:
+
+curl -X POST "https://api.wavespeed.ai/api/v3/media/upload/binary" \
+  -H "Authorization: Bearer $WAVESPEED_API_KEY" \
+  -F "file=@/path/to/image.png"
+
+Response:
+
+{
+    "code": 200,
+    "message": "success",
+    "data": {
+      "type": "image",
+      "download_url": "https://cdn.wavespeed.ai/uploads/xxx.png",
+      "filename": "image.png",
+      "size": 1024000
+    }
+}
+
+💡 For files larger than 300MB, use a URL input instead of uploading directly.
+
+6. Schema
+Input
+Parameter	Type	Required	Default	Range	Description
+images	array	No	--	--	The images to edit. A maximum of 10 reference images can be uploaded.
+prompt	string	No	--	--	The positive prompt for the generation.
+size	string	No	--	--	Specify the width and height pixel values of the generated image.
+output_format	string	No	--	jpeg, png	The format of the output image.
+enable_sync_mode	boolean	No	--	--	If set to true, the function will wait for the result to be generated and uploaded before returning the response. It allows you to get the result directly in the response. This property is only available through the API.
+enable_base64_output	boolean	No	--	--	If enabled, the output will be encoded into a BASE64 string instead of a URL. This property is only available through the API.
+Example request
+
+{
+    "enable_base64_output": false,
+    "enable_sync_mode": false,
+    "images": [
+        "https://static.wavespeed.ai/examples/0a250eead8c24aa4ac3b8c0333abb0c2/1774351088186796001_em96xShI.jpeg"
+    ],
+    "prompt": "Transform the entire scene into a miniature tilt-shift diorama. Make the subject look like a hand-painted figurine with visible brush strokes on the skin. Add a wooden display base beneath the scene. Shift the lighting to warm studio spotlights from above. Make all textures look like craft materials — felt, clay, and balsa wood."
+}
+
+Ouput
+
+{
+    "id": "abc123-def456-...",
+    "status": "completed",
+    "outputs": ["https://cdn.wavespeed.ai/outputs/xxx.png"]
+}
+
+
+- wavespeed - text2image
+Bytedance Seedream-v5.0-lite
+Seedream 5.0 Lite by is a state-of-the-art text-to-image model with enhanced typography, clear text rendering for posters and brand visuals, superior prompt adherence, and up to 4K resolution. Ready-to-use REST inference API, best performance, no coldstarts, affordable pricing.
+
+1. Calling the API
+Submit a request
+The client handles polling automatically and returns the result when complete.
+
+
+curl -X POST "https://api.wavespeed.ai/api/v3/bytedance/seedream-v5.0-lite" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $WAVESPEED_API_KEY" \
+  -d '{
+    "enable_base64_output": false,
+    "enable_sync_mode": false,
+    "prompt": "Street style photography, a stylish young woman in an oversized blazer and vintage sunglasses, urban backdrop, golden hour, shot on Leica",
+    "size": "1728*2304"
+}'
+
+
+Fal 
+Bytedance Seedream-v5 Edit
+About
+Edit images using Bytedance's SeedDream 5.0 Lite model.
+
+1. Calling the API
+#
+Install the client
+#
+The client provides a convenient way to interact with the model API.
+
+npm
+yarn
+pnpm
+bun
+
+npm install --save @fal-ai/client
+Migrate to @fal-ai/client
+The @fal-ai/serverless-client package has been deprecated in favor of @fal-ai/client. Please check the migration guide for more information.
+
+Setup your API Key
+#
+Set FAL_KEY as an environment variable in your runtime.
+
+
+export FAL_KEY="YOUR_API_KEY"
+Submit a request
+#
+The client API handles the API submit protocol. It will handle the request status updates and return the result when the request is completed.
+
+
+import { fal } from "@fal-ai/client";
+
+const result = await fal.subscribe("fal-ai/bytedance/seedream/v5/lite/edit", {
+  input: {
+    prompt: "Replace the product in Figure 1 with that in Figure 2. Seamlessly render logo in Figure 3 into the product design, in frosted glass texture. Remove any extra text in Figure 1, and design a catchy tagline for the perfume.",
+    image_urls: ["https://v3b.fal.media/files/b/0a8f9936/KOsb_qPB_W0ZJ0Ee2OsnU_586e2892841d46f09049ee7199b303d3.png", "https://v3b.fal.media/files/b/0a8f994e/JroWTogO6jOTFk9b6B3XM_591ca38cef2f44bbba2843cbf80fb1b2.png", "https://v3b.fal.media/files/b/0a8f9960/Q6pzwXAiFaFPOpSScoE-D_0eca5db19e5242739f127efe49b38922.png"]
+  },
+  logs: true,
+  onQueueUpdate: (update) => {
+    if (update.status === "IN_PROGRESS") {
+      update.logs.map((log) => log.message).forEach(console.log);
+    }
+  },
+});
+console.log(result.data);
+console.log(result.requestId);
+2. Authentication
+#
+The API uses an API Key for authentication. It is recommended you set the FAL_KEY environment variable in your runtime when possible.
+
+API Key
+#
+In case your app is running in an environment where you cannot set environment variables, you can set the API Key manually as a client configuration.
+
+import { fal } from "@fal-ai/client";
+
+fal.config({
+  credentials: "YOUR_FAL_KEY"
+});
+Protect your API Key
+When running code on the client-side (e.g. in a browser, mobile app or GUI applications), make sure to not expose your FAL_KEY. Instead, use a server-side proxy to make requests to the API. For more information, check out our server-side integration guide.
+
+3. Queue
+#
+Long-running requests
+For long-running requests, such as training jobs or models with slower inference times, it is recommended to check the Queue status and rely on Webhooks instead of blocking while waiting for the result.
+
+Submit a request
+#
+The client API provides a convenient way to submit requests to the model.
+
+
+import { fal } from "@fal-ai/client";
+
+const { request_id } = await fal.queue.submit("fal-ai/bytedance/seedream/v5/lite/edit", {
+  input: {
+    prompt: "Replace the product in Figure 1 with that in Figure 2. Seamlessly render logo in Figure 3 into the product design, in frosted glass texture. Remove any extra text in Figure 1, and design a catchy tagline for the perfume.",
+    image_urls: ["https://v3b.fal.media/files/b/0a8f9936/KOsb_qPB_W0ZJ0Ee2OsnU_586e2892841d46f09049ee7199b303d3.png", "https://v3b.fal.media/files/b/0a8f994e/JroWTogO6jOTFk9b6B3XM_591ca38cef2f44bbba2843cbf80fb1b2.png", "https://v3b.fal.media/files/b/0a8f9960/Q6pzwXAiFaFPOpSScoE-D_0eca5db19e5242739f127efe49b38922.png"]
+  },
+  webhookUrl: "https://optional.webhook.url/for/results",
+});
+Fetch request status
+#
+You can fetch the status of a request to check if it is completed or still in progress.
+
+
+import { fal } from "@fal-ai/client";
+
+const status = await fal.queue.status("fal-ai/bytedance/seedream/v5/lite/edit", {
+  requestId: "764cabcf-b745-4b3e-ae38-1200304cf45b",
+  logs: true,
+});
+Get the result
+#
+Once the request is completed, you can fetch the result. See the Output Schema for the expected result format.
+
+
+import { fal } from "@fal-ai/client";
+
+const result = await fal.queue.result("fal-ai/bytedance/seedream/v5/lite/edit", {
+  requestId: "764cabcf-b745-4b3e-ae38-1200304cf45b"
+});
+console.log(result.data);
+console.log(result.requestId);
+4. Files
+#
+Some attributes in the API accept file URLs as input. Whenever that's the case you can pass your own URL or a Base64 data URI.
+
+Data URI (base64)
+#
+You can pass a Base64 data URI as a file input. The API will handle the file decoding for you. Keep in mind that for large files, this alternative although convenient can impact the request performance.
+
+Hosted files (URL)
+#
+You can also pass your own URLs as long as they are publicly accessible. Be aware that some hosts might block cross-site requests, rate-limit, or consider the request as a bot.
+
+Uploading files
+#
+We provide a convenient file storage that allows you to upload files and use them in your requests. You can upload files using the client API and use the returned URL in your requests.
+
+
+import { fal } from "@fal-ai/client";
+
+const file = new File(["Hello, World!"], "hello.txt", { type: "text/plain" });
+const url = await fal.storage.upload(file);
+Auto uploads
+The client will auto-upload the file for you if you pass a binary object (e.g. File, Data).
+
+Read more about file handling in our file upload guide.
+
+5. Schema
+#
+Input
+#
+prompt string
+The text prompt used to edit the image
+
+image_size ImageSize | Enum
+The size of the generated image. Total pixels must be between 2560x1440 and 3072x3072. In case the image size does not fall within these parameters, the image size will be adjusted to by scaling. Default value: auto_2K
+
+Possible enum values: square_hd, square, portrait_4_3, portrait_16_9, landscape_4_3, landscape_16_9, auto_2K, auto_3K
+
+Note: For custom image sizes, you can pass the width and height as an object:
+
+
+"image_size": {
+  "width": 1280,
+  "height": 720
+}
+num_images integer
+Number of separate model generations to be run with the prompt. Default value: 1
+
+max_images integer
+If set to a number greater than one, enables multi-image generation. The model will potentially return up to max_images images every generation, and in total, num_images generations will be carried out. In total, the number of images generated will be between num_images and max_images*num_images. Default value: 1
+
+sync_mode boolean
+If True, the media will be returned as a data URI and the output data won't be available in the request history.
+
+enable_safety_checker boolean
+If set to true, the safety checker will be enabled. Default value: true
+
+image_urls list<string>
+List of URLs of input images for editing. Presently, up to 10 image inputs are allowed. If over 10 images are sent, only the last 10 will be used.
+
+
+{
+  "prompt": "Replace the product in Figure 1 with that in Figure 2. Seamlessly render logo in Figure 3 into the product design, in frosted glass texture. Remove any extra text in Figure 1, and design a catchy tagline for the perfume.",
+  "image_size": "auto_2K",
+  "num_images": 1,
+  "max_images": 1,
+  "enable_safety_checker": true,
+  "image_urls": [
+    "https://v3b.fal.media/files/b/0a8f9936/KOsb_qPB_W0ZJ0Ee2OsnU_586e2892841d46f09049ee7199b303d3.png",
+    "https://v3b.fal.media/files/b/0a8f994e/JroWTogO6jOTFk9b6B3XM_591ca38cef2f44bbba2843cbf80fb1b2.png",
+    "https://v3b.fal.media/files/b/0a8f9960/Q6pzwXAiFaFPOpSScoE-D_0eca5db19e5242739f127efe49b38922.png"
+  ]
+}
+Output
+#
+images list<Image>
+Generated images
+
+seed integer
+Seed used for generation.
+
+
+{
+  "images": [
+    {
+      "url": "https://v3b.fal.media/files/b/0a8fbf56/wu9vcxO3xO6lkHv5zdiIs_7aa8564f6e4f4cc795ecb8e923deb2fb.png"
+    }
+  ],
+  "seed": 42
+}
+Other types
+#
+Image
+#
+url string
+The URL where the file can be downloaded from.
+
+content_type string
+The mime type of the file.
+
+file_name string
+The name of the file. It will be auto-generated if not provided.
+
+file_size integer
+The size of the file in bytes.
+
+width integer
+The width of the image in pixels.
+
+height integer
+The height of the image in pixels.
+
+Seed2MiniMessage
+#
+role RoleEnum
+The role of the message author.
+
+Possible enum values: system, user, assistant
+
+content string | list<object>
+The content of the message. Can be a string for text-only messages, or a list of content parts for multimodal messages (e.g. with images).
+
+ImageSize
+#
+width integer
+The width of the generated image. Default value: 512
+
+height integer
+The height of the generated image. Default value: 512
+
+File
+#
+url string
+The URL where the file can be downloaded from.
+
+content_type string
+The mime type of the file.
+
+file_name string
+The name of the file. It will be auto-generated if not provided.
+
+file_size integer
+The size of the file in bytes.
+
+
+Fal 
+Bytedance Seedream-v5 Edit
+About
+Generate images using Bytedance's Seedream 5.0 Lite model.
+
+1. Calling the API
+#
+Install the client
+#
+The client provides a convenient way to interact with the model API.
+
+npm
+yarn
+pnpm
+bun
+
+npm install --save @fal-ai/client
+Migrate to @fal-ai/client
+The @fal-ai/serverless-client package has been deprecated in favor of @fal-ai/client. Please check the migration guide for more information.
+
+Setup your API Key
+#
+Set FAL_KEY as an environment variable in your runtime.
+
+
+export FAL_KEY="YOUR_API_KEY"
+Submit a request
+#
+The client API handles the API submit protocol. It will handle the request status updates and return the result when the request is completed.
+
+
+import { fal } from "@fal-ai/client";
+
+const result = await fal.subscribe("fal-ai/bytedance/seedream/v5/lite/text-to-image", {
+  input: {
+    prompt: "Realistic DSLR photograph of anthropomorphic Penkingese dog enjoying a bowl of ramen on the Great Wall of China with the words \"Seedream 5.0 Lite available on fal\" visible at the top."
+  },
+  logs: true,
+  onQueueUpdate: (update) => {
+    if (update.status === "IN_PROGRESS") {
+      update.logs.map((log) => log.message).forEach(console.log);
+    }
+  },
+});
+console.log(result.data);
+console.log(result.requestId);
+
+Submit a request
+#
+The client API provides a convenient way to submit requests to the model.
+
+
+import { fal } from "@fal-ai/client";
+
+const { request_id } = await fal.queue.submit("fal-ai/bytedance/seedream/v5/lite/text-to-image", {
+  input: {
+    prompt: "Realistic DSLR photograph of anthropomorphic Penkingese dog enjoying a bowl of ramen on the Great Wall of China with the words \"Seedream 5.0 Lite available on fal\" visible at the top."
+  },
+  webhookUrl: "https://optional.webhook.url/for/results",
+});
+
+Fetch request status
+#
+You can fetch the status of a request to check if it is completed or still in progress.
+
+
+import { fal } from "@fal-ai/client";
+
+const status = await fal.queue.status("fal-ai/bytedance/seedream/v5/lite/text-to-image", {
+  requestId: "764cabcf-b745-4b3e-ae38-1200304cf45b",
+  logs: true,
+});
+Get the result
+#
+Once the request is completed, you can fetch the result. See the Output Schema for the expected result format.
+
+
+import { fal } from "@fal-ai/client";
+
+const result = await fal.queue.result("fal-ai/bytedance/seedream/v5/lite/text-to-image", {
+  requestId: "764cabcf-b745-4b3e-ae38-1200304cf45b"
+});
+console.log(result.data);
+console.log(result.requestId);
