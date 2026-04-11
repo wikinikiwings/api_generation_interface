@@ -34,19 +34,29 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 
-# non-root user
-RUN addgroup --system --gid 1001 nodejs \
- && adduser  --system --uid 1001 nextjs
+# Запускаем от root. Причина: bind-mount /data на Windows-хосте (Docker
+# Desktop file sharing поверх NTFS) приходит в контейнер с владельцем
+# root:root и правами, которые не даёт писать обычным пользователям.
+# SQLite в этом случае молча открывает БД в read-only режиме и валит
+# все write-запросы с "attempt to write a readonly database". Root внутри
+# изолированного контейнера — это не root хоста, так что безопасность
+# не страдает. На Linux-деплое это тоже работает без правок.
+#
+# Если в будущем понадобится запускать от non-root на Linux-хосте,
+# раскомментируй блок ниже и передай UID владельца папки на хосте
+# через --build-arg UID=$(id -u), затем USER appuser.
+# ARG UID=1001
+# RUN addgroup --system --gid ${UID} nodejs \
+#  && adduser  --system --uid ${UID} appuser
 
 # standalone output + статика + public
 COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
 # data dir для SQLite + картинок (mount point)
-RUN mkdir -p /data/history_images && chown -R nextjs:nodejs /data
+RUN mkdir -p /data/history_images
 
-USER nextjs
 EXPOSE 3000
 
 ENTRYPOINT ["/sbin/tini", "--"]
