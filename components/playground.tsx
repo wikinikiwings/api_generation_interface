@@ -8,42 +8,41 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Select } from "@/components/ui/select";
 import { UsernameModal } from "@/components/username-modal";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useUser } from "@/app/providers/user-provider";
 import { listAllModels } from "@/lib/providers/models";
 import type { ModelId, ProviderId } from "@/lib/providers/types";
 
-// Client-side mirror of each provider's `supportedModels`. We don't fetch from
-// /api/providers because that would add a round-trip on every mount; the
-// canonical source remains the provider files in lib/providers/. If you add a
-// model, update both the provider file AND this table. The autoswitch effect
-// below uses this to bounce selectedModel to a supported one when the user
-// changes provider while a non-supported model is active.
+/**
+ * Per-provider model whitelist (client-side mirror of each provider's
+ * `supportedModels`). We don't fetch /api/providers because that would add
+ * a round-trip on every mount; the canonical source remains the provider
+ * files in lib/providers/. If you add a model, update both the provider
+ * file AND this table. The autoswitch effect below uses this to bounce
+ * selectedModel to a supported one when the user changes provider while a
+ * non-supported model is active.
+ */
 const PROVIDER_MODELS: Record<ProviderId, ModelId[]> = {
   wavespeed: ["nano-banana-pro", "nano-banana-2", "nano-banana", "seedream-4-5", "seedream-5-0-lite"],
   fal:       ["nano-banana-pro", "nano-banana-2", "nano-banana", "seedream-4-5", "seedream-5-0-lite"],
   comfy:     ["nano-banana-pro", "nano-banana-2", "nano-banana", "seedream-4-5", "seedream-5-0-lite"],
 };
 
-/**
- * Model picker options shown in the form card header.
- *
- * Currently there's only one model (Nano Banana Pro) shared across all three
- * providers. When multi-model support is wired (see CHECKPOINT-v3 →
- * "Подготовка к мульти-модельной архитектуре"), expand this array and thread
- * `selectedModel` down to `GenerateForm` as a prop so it can be included in
- * the `EditInput` sent to providers.
- *
- * For now, this select is a real functional component but has only one
- * option — it acts as a visual slot ready to grow without any refactor.
- */
-const MODEL_OPTIONS = [
-  { value: "nano-banana-pro", label: "Nano Banana Pro" },
-];
-
 export function Playground() {
   const [historyOpen, setHistoryOpen] = React.useState(false);
   const selectedProvider = useSettingsStore((s) => s.selectedProvider);
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const setSelectedModel = useSettingsStore((s) => s.setSelectedModel);
+  const hydrateUserModel = useSettingsStore((s) => s.hydrateUserModel);
+  const { username } = useUser();
+
+  // Per-user model hydration. Runs once when username becomes known
+  // (i.e. after UsernameModal closes on first visit, or immediately on
+  // subsequent visits since the cookie is already set). The store guards
+  // against stomping a click that happens during the in-flight request,
+  // so it's safe to fire even if the user is interacting with the picker.
+  React.useEffect(() => {
+    if (username) void hydrateUserModel(username);
+  }, [username, hydrateUserModel]);
 
   // Filter the visible model options to those supported by the active provider.
   const modelOptions = React.useMemo(
@@ -58,12 +57,14 @@ export function Playground() {
   // supported by the new provider (e.g. seedream selected then provider
   // switches to comfy), snap selectedModel to the first one the new provider
   // does support. Without this, the API route would 400 on the next submit.
+  // We pass username so the snapped value also persists server-side — the
+  // user effectively "chose" this fallback by changing the provider.
   React.useEffect(() => {
     const supported = PROVIDER_MODELS[selectedProvider];
     if (!supported.includes(selectedModel)) {
-      setSelectedModel(supported[0]);
+      setSelectedModel(supported[0], username);
     }
-  }, [selectedProvider, selectedModel, setSelectedModel]);
+  }, [selectedProvider, selectedModel, setSelectedModel, username]);
 
   return (
     // The top bar was removed to give the form card more vertical real estate
@@ -89,7 +90,7 @@ export function Playground() {
                 <Select
                   id="model"
                   value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value as ModelId)}
+                  onChange={(e) => setSelectedModel(e.target.value as ModelId, username)}
                   options={modelOptions}
                   className="h-9"
                 />

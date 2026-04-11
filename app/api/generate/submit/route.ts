@@ -35,9 +35,11 @@ export async function POST(req: Request) {
     }
 
     // Backward-compat: clients pre-multimodel sent no modelId. Default to
-    // nano-banana-pro (the only model that existed before this change).
+    // nano-banana-2 — current product default (Phase 5). Older clients are
+    // rare since the store bump (v3) forces a fresh persisted value, but
+    // direct API callers / curl users still benefit from a sane fallback.
     if (!body.modelId) {
-      body.modelId = "nano-banana-pro";
+      body.modelId = "nano-banana-2";
     }
 
     const supported = listModelsForProvider(body.provider);

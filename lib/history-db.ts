@@ -63,7 +63,49 @@ function initDb(db: Database.Database) {
       value TEXT NOT NULL,
       updated_at TEXT DEFAULT (datetime('now'))
     );
+    -- Per-user preferences (Phase 5b: sticky model picker per identity).
+    -- Keyed by username because that's the only identity primitive we have
+    -- (no auth, no user-id surrogate). Aditive table — schema-compatible
+    -- with viewcomfy-claude since it just adds, never modifies.
+    -- selected_model is nullable so a row can exist with NULL meaning
+    -- "explicitly cleared, fall back to default". In practice we just
+    -- delete the row when clearing, but the column allows future prefs.
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      username TEXT PRIMARY KEY,
+      selected_model TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
+}
+
+/**
+ * Read a user's persisted model choice. Returns null when:
+ *   - the user has never picked anything (no row),
+ *   - the row exists but selected_model is NULL.
+ * Caller (the API route) translates null → client default "nano-banana-2".
+ */
+export function getUserSelectedModel(username: string): string | null {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT selected_model FROM user_preferences WHERE username = ?`)
+    .get(username) as { selected_model: string | null } | undefined;
+  return row?.selected_model ?? null;
+}
+
+/**
+ * Upsert a user's model choice. Atomic via SQLite ON CONFLICT — safe under
+ * concurrent writes from the same user across multiple tabs / devices.
+ * Last write wins, which is the right semantic for a UI picker.
+ */
+export function setUserSelectedModel(username: string, modelId: string): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO user_preferences (username, selected_model, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(username) DO UPDATE SET
+       selected_model = excluded.selected_model,
+       updated_at = datetime('now')`
+  ).run(username, modelId);
 }
 
 export interface IGenerationOutput {
