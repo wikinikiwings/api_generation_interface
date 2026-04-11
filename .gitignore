@@ -35,6 +35,10 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# simple_build local env (lives outside .env.* naming)
+/simple_build/env
+/simple_build/.env
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

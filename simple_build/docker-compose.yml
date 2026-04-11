@@ -1,0 +1,31 @@
+services:
+  wavespeed-claude:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # start.sh / start.ps1 переопределяет это значение на
+        # текущий timestamp, чтобы инвалидировать кэш git clone.
+        CACHEBUST: ${CACHEBUST:-1}
+    image: wavespeed-claude:simple
+    container_name: wavespeed-claude
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      # Путь к .env берётся из переменной окружения ENV_FILE на хосте.
+      # Если она не задана — по умолчанию ищем ./env рядом с compose-файлом.
+      # start.sh/start.ps1 подсказывают правильное использование.
+      - ${ENV_FILE:-./env}
+    environment:
+      HISTORY_DATA_DIR: /data
+      NODE_ENV: production
+    volumes:
+      # Windows-хост. На Linux замени на /opt/viewcomfy_data:/data
+      - C:/viewcomfy_data/database:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
