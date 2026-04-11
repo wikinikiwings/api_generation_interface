@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { toast } from "sonner";
 import { GenerateForm } from "@/components/generate-form";
 import { OutputArea } from "@/components/output-area";
 import { HistorySidebar } from "@/components/history-sidebar";
@@ -11,6 +12,17 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useUser } from "@/app/providers/user-provider";
 import { listAllModels } from "@/lib/providers/models";
 import type { ModelId, ProviderId } from "@/lib/providers/types";
+
+/**
+ * Display names for the three provider IDs. Hardcoded here — there are
+ * only three and they rarely change. If you add a fourth provider, update
+ * this map and PROVIDER_MODELS below in the same commit.
+ */
+const PROVIDER_LABELS: Record<ProviderId, string> = {
+  wavespeed: "WaveSpeed",
+  fal: "Fal.ai",
+  comfy: "ComfyUI",
+};
 
 /**
  * Per-provider model whitelist (client-side mirror of each provider's
@@ -33,7 +45,16 @@ export function Playground() {
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const setSelectedModel = useSettingsStore((s) => s.setSelectedModel);
   const hydrateUserModel = useSettingsStore((s) => s.hydrateUserModel);
+  const startProviderPolling = useSettingsStore((s) => s.startProviderPolling);
   const { username } = useUser();
+
+  // Flag set by the polling callback to mark that the next provider change
+  // came from the server (admin action), not from a user interaction in
+  // this tab. The auto-switch effect below reads this to decide whether
+  // to surface a toast about an incompatible model. Using a ref instead
+  // of state because we don't want to trigger a re-render — the flag is
+  // consumed inside an effect that already runs on selectedProvider change.
+  const adminSwitchRef = React.useRef(false);
 
   // Per-user model hydration. Runs once when username becomes known
   // (i.e. after UsernameModal closes on first visit, or immediately on
@@ -43,6 +64,23 @@ export function Playground() {
   React.useEffect(() => {
     if (username) void hydrateUserModel(username);
   }, [username, hydrateUserModel]);
+
+  // Provider polling: detect admin-side changes to the active provider
+  // and notify the user. The toast "Админ переключил endpoint на X"
+  // fires here. The companion toast about incompatible models lives in
+  // the auto-switch effect below — they're separate concerns.
+  React.useEffect(() => {
+    const cleanup = startProviderPolling((next, prev) => {
+      adminSwitchRef.current = true;
+      toast.info(
+        `Админ переключил endpoint на ${PROVIDER_LABELS[next]}`,
+        {
+          description: `Было: ${PROVIDER_LABELS[prev]}. Следующая генерация пойдёт через новый endpoint.`,
+        }
+      );
+    });
+    return cleanup;
+  }, [startProviderPolling]);
 
   // Filter the visible model options to those supported by the active provider.
   const modelOptions = React.useMemo(
@@ -59,11 +97,35 @@ export function Playground() {
   // does support. Without this, the API route would 400 on the next submit.
   // We pass username so the snapped value also persists server-side — the
   // user effectively "chose" this fallback by changing the provider.
+  //
+  // If the provider change came from the admin (adminSwitchRef.current is
+  // true), surface an extra toast explaining what happened to the model.
   React.useEffect(() => {
     const supported = PROVIDER_MODELS[selectedProvider];
     if (!supported.includes(selectedModel)) {
-      setSelectedModel(supported[0], username);
+      const fallback = supported[0];
+      const wasAdminSwitch = adminSwitchRef.current;
+      // Capture display names BEFORE setSelectedModel updates state, so
+      // the toast shows the old model name, not the new one.
+      const allModels = listAllModels();
+      const oldLabel =
+        allModels.find((m) => m.id === selectedModel)?.displayName ?? selectedModel;
+      const newLabel =
+        allModels.find((m) => m.id === fallback)?.displayName ?? fallback;
+      setSelectedModel(fallback, username);
+      if (wasAdminSwitch) {
+        toast.warning(
+          `Модель «${oldLabel}» недоступна для этого endpoint`,
+          {
+            description: `Вы были автоматически переключены на «${newLabel}».`,
+          }
+        );
+      }
     }
+    // Always reset the flag at the end of the effect, regardless of
+    // whether a model swap happened. Otherwise a future user-driven
+    // model change could pick up a stale flag.
+    adminSwitchRef.current = false;
   }, [selectedProvider, selectedModel, setSelectedModel, username]);
 
   return (

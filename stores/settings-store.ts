@@ -56,6 +56,21 @@ interface SettingsState {
   hydrateUserModel: (username: string) => Promise<void>;
   updateSelectedProvider: (id: ProviderId) => Promise<void>;
   setSelectedModel: (id: ModelId, username?: string | null) => void;
+  /**
+   * Start polling /api/settings every 30s + on visibilitychange. Returns
+   * a cleanup function. Idempotent within a single component lifecycle:
+   * if startProviderPolling() is called twice, the second call returns
+   * the same cleanup as the first (poll only runs once).
+   *
+   * The optional `onProviderChanged` callback fires whenever the polled
+   * value differs from the local store value — used by playground.tsx to
+   * surface a toast "Админ переключил endpoint на X". The callback fires
+   * AFTER the store has been updated, so consumers can read the new
+   * value from `get().selectedProvider` if needed.
+   */
+  startProviderPolling: (
+    onProviderChanged?: (next: ProviderId, prev: ProviderId) => void
+  ) => () => void;
 }
 
 export const useSettingsStore = create<SettingsState>()((set, get) => ({
@@ -152,5 +167,70 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
       set({ selectedProvider: previous });
       throw err;
     }
+  },
+
+  /**
+   * Polling implementation — see interface comment for contract.
+   *
+   * Why polling vs SSE: GET /api/settings is a single SQLite primary-key
+   * lookup (~microseconds), and at 20 users/30s = 40 req/min the load is
+   * negligible. SSE would give real-time push but adds connection-mgmt
+   * complexity (broadcast registry, reconnection, proxy buffering) for
+   * no meaningful UX gain over a 30s tick + visibilitychange flush.
+   *
+   * Stale-detection: each tick GETs the value, compares to current store
+   * state, and if it changed, calls set() + invokes the callback. We
+   * compare via the freshly-read state inside tick() to avoid stale
+   * closures from the outer scope.
+   *
+   * SSR safety: this method only runs from useEffect on the client, so
+   * window/setInterval are guaranteed to exist. We still guard for
+   * paranoia in case someone calls it from somewhere weird.
+   */
+  startProviderPolling: (onProviderChanged) => {
+    if (typeof window === "undefined") return () => {};
+
+    const POLL_INTERVAL_MS = 30_000;
+    let cancelled = false;
+
+    async function tick() {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/settings", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { selectedProvider: ProviderId };
+        if (cancelled) return;
+        const prev = get().selectedProvider;
+        if (data.selectedProvider && data.selectedProvider !== prev) {
+          set({ selectedProvider: data.selectedProvider });
+          // Mark hydrated in case the very first /api/settings was the
+          // poll itself (e.g. if hydrate() failed or was skipped).
+          if (!get().isHydrated) set({ isHydrated: true });
+          onProviderChanged?.(data.selectedProvider, prev);
+        }
+      } catch (err) {
+        // Network blip — stay on current state, retry next tick. We
+        // intentionally don't surface this to the user; provider sync
+        // is best-effort, the submit endpoint is the source of truth.
+        console.warn("[settings] poll tick failed:", err);
+      }
+    }
+
+    const intervalId = window.setInterval(tick, POLL_INTERVAL_MS);
+
+    // Visibility-based fast path: when the user comes back to the tab
+    // (e.g. after lunch), force an immediate fetch instead of waiting up
+    // to 30s for the next interval. This is the moment they're most
+    // likely to click Generate, so getting fresh state here matters most.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   },
 }));

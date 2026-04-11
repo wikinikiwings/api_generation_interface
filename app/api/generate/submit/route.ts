@@ -1,9 +1,38 @@
 import { NextResponse } from "next/server";
 import { getProvider, listModelsForProvider } from "@/lib/providers/registry";
+import { getAppSetting } from "@/lib/history-db";
 import type {
   GenerateSubmitBody,
   GenerateSubmitResponse,
+  ProviderId,
 } from "@/lib/providers/types";
+
+const VALID_PROVIDERS: ProviderId[] = ["wavespeed", "comfy", "fal"];
+const DEFAULT_PROVIDER: ProviderId = "wavespeed";
+
+/**
+ * Resolve the active provider from server-side state, NOT from client input.
+ *
+ * Why: the admin can change `selectedProvider` at any moment via the admin
+ * panel. Client stores poll /api/settings every 30s and on visibilitychange,
+ * but there's still a window where a user could click Generate with a
+ * stale provider in their UI. If we trusted body.provider, that submit
+ * would route to the wrong endpoint. Reading from app_settings here
+ * closes the gap completely — the worst case is a 400 from the model
+ * compatibility check below if their stale model doesn't fit the new
+ * provider, which is the right failure mode (better than silently
+ * generating on the wrong backend).
+ *
+ * body.provider is still accepted for backward compat and logging but is
+ * effectively a hint, not a source of truth.
+ */
+function resolveProvider(): ProviderId {
+  const stored = getAppSetting("selectedProvider");
+  if (stored && VALID_PROVIDERS.includes(stored as ProviderId)) {
+    return stored as ProviderId;
+  }
+  return DEFAULT_PROVIDER;
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,12 +56,18 @@ export async function POST(req: Request) {
   try {
     const body = (await req.json()) as GenerateSubmitBody;
 
-    if (!body.provider) {
-      return NextResponse.json(
-        { error: "`provider` field is required" },
-        { status: 400 }
+    // Server-authoritative provider resolution. We deliberately ignore
+    // body.provider as a source of truth (see resolveProvider() above).
+    // Overwriting body.provider also keeps downstream code paths — history
+    // entries, error messages, the provider.submit() call — consistently
+    // pointing at the actual provider being used.
+    const activeProvider = resolveProvider();
+    if (body.provider && body.provider !== activeProvider) {
+      console.info(
+        `[/api/generate/submit] client sent provider="${body.provider}" but server-side active is "${activeProvider}"; using server value`
       );
     }
+    body.provider = activeProvider;
 
     // Backward-compat: clients pre-multimodel sent no modelId. Default to
     // nano-banana-2 — current product default (Phase 5). Older clients are
