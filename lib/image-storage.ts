@@ -1,23 +1,43 @@
-// Server-only. Writes generated images to `public/generated/` and returns
-// a public URL that Next.js will serve from the static directory.
+// Server-only. Writes generated images to the SAME directory used by
+// the history subsystem (lib/history-db.ts → HISTORY_IMAGES_DIR) and
+// returns a URL served by app/api/history/image/[filename]/route.ts.
 //
-// Used by sync providers (Fal) and any provider that returns an external URL
-// or base64 blob which we want to cache locally.
+// IMPORTANT: We do NOT write to public/generated/ anymore. Next.js 15
+// standalone builds snapshot public/ at server start and ignore any
+// files created at runtime — they return 404 through the built-in static
+// handler. Instead, we write to HISTORY_DATA_DIR/history_images/ (which
+// is already mounted as a Docker volume at /data in docker-compose.yml,
+// and is already served by the existing history-image route handler).
+//
+// Why reuse history-db's directory instead of a new one:
+//   1. Single persistent storage point — simpler backup/cleanup.
+//   2. The route handler at /api/history/image/[filename] already exists,
+//      already uses the same getHistoryImagesDir() helper, and already
+//      has path-traversal defense. No need to duplicate it.
+//   3. Schema-compatible with viewcomfy-claude which shares the same DB.
+//
+// Used by sync providers (Fal, Comfy) and any provider that returns an
+// external URL or base64 blob which we want to cache locally.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { getHistoryImagesDir } from "@/lib/history-db";
 
-const GENERATED_DIR = join(process.cwd(), "public", "generated");
+// Resolved lazily so history-db's sync mkdir side effect at import time
+// doesn't fire until this module is actually used.
+function getGeneratedDir(): string {
+  return getHistoryImagesDir();
+}
 
 async function ensureDir() {
-  await mkdir(GENERATED_DIR, { recursive: true });
+  await mkdir(getGeneratedDir(), { recursive: true });
 }
 
 export interface SavedImage {
   /** Just the filename, e.g. "abc123.png" */
   filename: string;
-  /** Public URL served by Next.js static, e.g. "/generated/abc123.png" */
+  /** URL served by /api/history/image/[filename] route handler */
   publicUrl: string;
   /** Absolute path on disk */
   absolutePath: string;
@@ -49,8 +69,8 @@ export function extFromContentType(contentType: string | null | undefined): stri
 }
 
 /**
- * Write a binary buffer to `public/generated/<uuid>.<ext>` and return
- * the filename + public URL. Creates the directory on first call.
+ * Write a binary buffer to HISTORY_IMAGES_DIR/<uuid>.<ext> and return
+ * the filename + served URL. Creates the directory on first call.
  */
 export async function saveBinary(
   data: ArrayBuffer | Uint8Array | Buffer,
@@ -60,7 +80,7 @@ export async function saveBinary(
 
   const normalizedExt = normalizeExt(ext);
   const filename = `${randomUUID()}.${normalizedExt}`;
-  const absolutePath = join(GENERATED_DIR, filename);
+  const absolutePath = join(getGeneratedDir(), filename);
 
   // Normalize all supported input types to Buffer
   let buffer: Buffer;
@@ -77,14 +97,17 @@ export async function saveBinary(
 
   return {
     filename,
-    publicUrl: `/generated/${filename}`,
+    // Served by app/api/history/image/[filename]/route.ts — the same
+    // route that the history sidebar uses for thumbnails. NOT
+    // /generated/<name> (public/ snapshot issue, see top-of-file).
+    publicUrl: `/api/history/image/${filename}`,
     absolutePath,
     sizeBytes: buffer.byteLength,
   };
 }
 
 /**
- * Download a remote image URL and save it to `public/generated/`.
+ * Download a remote image URL and save it locally.
  * Extension is inferred from Content-Type unless `preferredExt` is provided.
  */
 export async function downloadAndSave(
@@ -105,7 +128,7 @@ export async function downloadAndSave(
 
 /**
  * Save a base64 data URI (e.g. "data:image/png;base64,iVBOR...") or a plain
- * base64 string to `public/generated/`.
+ * base64 string to the generated images directory.
  */
 export async function saveBase64(
   base64OrDataUri: string,
