@@ -266,10 +266,18 @@ async function uploadBinaryToSignedUrl(
   buffer: Buffer,
   contentType: string
 ): Promise<void> {
+  // Type-level workaround for Next.js 15 + TS 5.7 + @types/node combo:
+  //   - DOM BodyInit doesn't include Buffer / Uint8Array
+  //   - BlobPart requires ArrayBuffer, but Buffer is typed as ArrayBufferLike
+  //     (which theoretically includes SharedArrayBuffer)
+  // In practice Node's Buffer.from(base64) ALWAYS backs onto a plain
+  // ArrayBuffer, never SharedArrayBuffer — the broader type is just defensive.
+  // Cast through `unknown` to tell TS we know what we're doing. Runtime is
+  // unchanged: fetch accepts Buffer natively in Node 20.
   const res = await fetch(signedUrl, {
     method: "PUT",
     headers: { "Content-Type": contentType },
-    body: buffer,
+    body: buffer as unknown as BodyInit,
     cache: "no-store",
   });
   if (!res.ok) {
