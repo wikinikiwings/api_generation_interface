@@ -15,6 +15,7 @@ import {
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { useHistoryStore } from "@/stores/history-store";
+import { usePromptStore } from "@/stores/prompt-store";
 import type { HistoryEntry } from "@/types/wavespeed";
 
 export interface HistorySidebarProps {
@@ -370,7 +371,10 @@ function ServerEntryCard({
   async function handleCopy() {
     if (!data.prompt) return;
     const ok = await copyToClipboard(data.prompt);
-    if (ok) toast.success("Промпт скопирован", { duration: 1500 });
+    if (ok) {
+      usePromptStore.getState().setPrompt(data.prompt);
+      toast.success("Промпт применён и скопирован", { duration: 1500 });
+    }
   }
 
   return (
