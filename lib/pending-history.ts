@@ -17,6 +17,9 @@
  *                                 the real row), blob URLs revoked
  *                                 after a short grace window
  */
+// Dev note: editing THIS file triggers Next.js HMR which re-initializes
+// the `map` and `listeners` state. If the sidebar stops updating after
+// a hot reload, do a full page reload.
 
 import type { ServerGeneration } from "@/hooks/use-history";
 
@@ -74,7 +77,6 @@ export function clearError(uuid: string): void {
   const cur = map.get(uuid);
   if (!cur || !cur.uploadError) return;
   const { uploadError: _removed, ...rest } = cur;
-  void _removed;
   map.set(uuid, rest as PendingGeneration);
   emit();
 }
