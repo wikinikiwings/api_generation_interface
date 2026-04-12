@@ -302,7 +302,10 @@ export function GenerateForm() {
             triggerHistoryRefresh();
           },
           (e: Error) => {
-            if (e instanceof DOMException && e.name === "AbortError") return;
+            if (e instanceof DOMException && e.name === "AbortError") {
+              useHistoryStore.getState().remove(historyId);
+              return;
+            }
             pendingHistory.markError(uploadUuid, e.message);
           }
         );
@@ -362,10 +365,14 @@ export function GenerateForm() {
         });
         triggerHistoryRefresh();
       } catch (e) {
-        // AbortError from uploadAbort.abort() means the user deleted
-        // the pending entry; removePending already cleaned up. Nothing
-        // more to do.
-        if (e instanceof DOMException && e.name === "AbortError") return;
+        if (e instanceof DOMException && e.name === "AbortError") {
+          // User deleted the pending entry — pending-history already
+          // revoked the blob URLs. Also drop the zustand entry so the
+          // Output panel doesn't keep rendering dangling <img src>
+          // pointing at revoked URLs.
+          useHistoryStore.getState().remove(historyId);
+          return;
+        }
         const msg = e instanceof Error ? e.message : "Upload failed";
         pendingHistory.markError(uploadUuid, msg);
         // Zustand entry keeps the blob URLs so the Output panel stays
