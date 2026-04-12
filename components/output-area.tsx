@@ -121,6 +121,38 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
     return merged.slice(0, 10);
   }, [entries, todayStart, serverToday, pending]);
 
+  // Trash handler for Output cards. Two categories:
+  //   1) Local-only entry (no serverGenId — POST failed or legacy row):
+  //      silent Zustand dismiss, no confirm, no network. Such a row
+  //      is not in the server DB, so symmetry with History is trivial
+  //      (History never rendered it either).
+  //   2) Server-backed entry (has serverGenId — either a local entry
+  //      that reached the server, or a remote serverToday row): confirm,
+  //      DELETE /api/history, toast. Zustand cleanup happens via the
+  //      SSE generation.deleted event landing in useGenerationEvents
+  //      (single source of truth for cross-tab/device consistency).
+  const handleRemove = React.useCallback(
+    async (entry: HistoryEntry) => {
+      if (typeof entry.serverGenId !== "number") {
+        remove(entry.id);
+        return;
+      }
+      if (!username) return;
+      if (!confirm("Удалить эту запись из истории?")) return;
+      try {
+        const res = await fetch(
+          `/api/history?id=${entry.serverGenId}&username=${encodeURIComponent(username)}`,
+          { method: "DELETE" }
+        );
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        toast.success("Удалено");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Delete failed");
+      }
+    },
+    [remove, username]
+  );
+
   const hasAny = todayEntries.length > 0;
 
   return (
@@ -161,7 +193,7 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
                 entry={entry}
                 siblings={todayEntries}
                 index={idx}
-                onRemove={() => remove(entry.id)}
+                onRemove={() => handleRemove(entry)}
               />
             ))}
           </div>
