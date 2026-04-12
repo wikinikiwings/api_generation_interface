@@ -45,6 +45,14 @@ export interface BlurUpImageProps {
 
 const DEFAULT_REVEAL_MS = 700;
 const REDUCED_MOTION_CROSSFADE_MS = 150;
+/**
+ * If the sharp layer's `onLoad` fires within this window after mount,
+ * treat the image as "already available" (blob-URL, HTTP cache, or
+ * decoded by a previous mount) and skip the curtain animation — the
+ * reveal is only meaningful for genuinely-loading images, not for
+ * cache-warm re-renders.
+ */
+const INSTANT_LOAD_THRESHOLD_MS = 60;
 
 /**
  * Two-layer image with a "curtain with feathered edge" reveal.
@@ -104,14 +112,28 @@ export const BlurUpImage = React.forwardRef<HTMLImageElement, BlurUpImageProps>(
     const revealMsRef = React.useRef(revealMs);
     revealMsRef.current = revealMs;
 
+    // Timestamp at mount so we can measure how long the sharp layer
+    // took to load. Fast loads (< INSTANT_LOAD_THRESHOLD_MS) mean the
+    // image was already in the HTTP/blob cache — no reveal needed.
+    const mountTimeRef = React.useRef<number>(
+      typeof performance !== "undefined" ? performance.now() : 0
+    );
+
     // Trigger reveal exactly once per mount when sharp first loads.
     React.useEffect(() => {
       if (!sharpLoaded) return;
       if (hasPlayedRef.current) return;
       hasPlayedRef.current = true;
 
-      if (reducedMotion) {
-        // Skip curtain: go straight to done after a minimal crossfade.
+      const elapsed =
+        typeof performance !== "undefined"
+          ? performance.now() - mountTimeRef.current
+          : Number.POSITIVE_INFINITY;
+
+      if (reducedMotion || elapsed < INSTANT_LOAD_THRESHOLD_MS) {
+        // Skip curtain: either the user prefers reduced motion, or the
+        // image was already cached and arrived too fast to animate
+        // without looking silly / being theatrical for no reason.
         setRevealState("done");
         return;
       }
