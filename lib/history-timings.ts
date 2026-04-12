@@ -14,6 +14,7 @@ export type Stage =
   | "fetch-start"
   | "fetch-done"
   | "decode-done"
+  | "thumb-done"
   | "encode-done"
   | "pending-added"
   | "card-painted";
@@ -62,6 +63,7 @@ function report(uuid: string): void {
       `gen→fetchStart ${fmt("fetch-start")} · ` +
       `gen→fetchDone ${fmt("fetch-done")} · ` +
       `gen→decodeDone ${fmt("decode-done")} · ` +
+      `gen→thumbDone ${fmt("thumb-done")} · ` +
       `gen→encodeDone ${fmt("encode-done")} · ` +
       `gen→pendingAdded ${fmt("pending-added")} · ` +
       `gen→cardPainted ${fmt("card-painted")}`

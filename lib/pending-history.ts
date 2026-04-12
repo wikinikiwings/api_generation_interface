@@ -26,9 +26,9 @@ import type { ServerGeneration } from "@/hooks/use-history";
 export interface PendingGeneration extends ServerGeneration {
   pending: true;
   uuid: string;
-  thumbBlobUrl: string;
-  midBlobUrl: string;
-  fullBlobUrl: string;
+  thumbBlobUrl?: string;
+  midBlobUrl?: string;
+  fullBlobUrl?: string;
   uploadError?: string;
   /**
    * Captures the inputs needed to retry the upload without the caller
@@ -93,6 +93,22 @@ export function markError(uuid: string, message: string): void {
   emit();
 }
 
+/**
+ * Merge-update an existing pending entry. Used to progressively fill in
+ * blob URLs as each variant finishes encoding. No-op if the uuid is
+ * already gone (confirmed or removed).
+ */
+export function updatePending(
+  uuid: string,
+  patch: Partial<Pick<PendingGeneration, "thumbBlobUrl" | "midBlobUrl" | "fullBlobUrl" | "retry" | "abort">>
+): void {
+  const cur = map.get(uuid);
+  if (!cur) return;
+  snapshot = null;
+  map.set(uuid, { ...cur, ...patch });
+  emit();
+}
+
 export function clearError(uuid: string): void {
   const cur = map.get(uuid);
   if (!cur || !cur.uploadError) return;
@@ -115,7 +131,11 @@ export function confirmPending(uuid: string): void {
   map.delete(uuid);
   snapshot = null;
   emit();
-  scheduleRevoke([cur.thumbBlobUrl, cur.midBlobUrl, cur.fullBlobUrl]);
+  scheduleRevoke(
+    [cur.thumbBlobUrl, cur.midBlobUrl, cur.fullBlobUrl].filter(
+      (u): u is string => Boolean(u)
+    )
+  );
 }
 
 /** Remove a pending entry without grace-period revocation (user-deleted). */
@@ -128,7 +148,11 @@ export function removePending(uuid: string): void {
   map.delete(uuid);
   snapshot = null;
   emit();
-  revoke([cur.thumbBlobUrl, cur.midBlobUrl, cur.fullBlobUrl]);
+  revoke(
+    [cur.thumbBlobUrl, cur.midBlobUrl, cur.fullBlobUrl].filter(
+      (u): u is string => Boolean(u)
+    )
+  );
 }
 
 function scheduleRevoke(urls: string[]): void {

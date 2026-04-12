@@ -222,11 +222,6 @@ export function GenerateForm() {
         console.warn("[history] skip POST: no username");
         return;
       }
-      // We require crypto.randomUUID here: the server validates
-      // uuid against the canonical RFC-4122 shape and the
-      // Math.random fallback in lib/utils#uuid wouldn't pass. Any
-      // browser that supports our canvas pipeline also has
-      // crypto.randomUUID.
       if (typeof crypto === "undefined" || !("randomUUID" in crypto)) {
         console.error("[history] crypto.randomUUID unavailable");
         toast.error("Browser too old — cannot save to history");
@@ -234,18 +229,6 @@ export function GenerateForm() {
       }
       const uploadUuid = crypto.randomUUID();
       mark(uploadUuid, "gen-complete");
-      let variants: Awaited<ReturnType<typeof createImageVariants>>;
-      try {
-        variants = await createImageVariants(outputUrl, uploadUuid);
-      } catch (e) {
-        console.error("[history] variant generation failed:", e);
-        toast.error("Could not prepare thumbnail");
-        return;
-      }
-
-      const thumbBlobUrl = URL.createObjectURL(variants.thumb);
-      const midBlobUrl = URL.createObjectURL(variants.mid);
-      const fullBlobUrl = URL.createObjectURL(variants.full);
 
       const hasImages = images.length > 0;
       const workflowName = `wavespeed:${activeProvider}/${selectedModel}/${
@@ -264,16 +247,79 @@ export function GenerateForm() {
 
       const originalFilename =
         outputUrl.split("/").pop() || `output.${outputFormat}`;
-      const originalContentType =
-        variants.full.type || `image/${outputFormat}`;
 
-      // Each upload has its own controller so `removePending` can cancel
-      // exactly this request without affecting other concurrent uploads.
       const uploadAbort = new AbortController();
 
-      // Push optimistic entry into the sidebar singleton BEFORE upload.
-      // Shape mirrors ServerGeneration just enough for the card renderer;
-      // `id: -1` is a sentinel that the card treats via `pending: true`.
+      // Push a SKELETON pending entry immediately — no blob URLs yet,
+      // but the sidebar card renders a placeholder so the user sees
+      // progress instantly, before any fetch or encode runs.
+      pendingHistory.addPending({
+        pending: true,
+        uuid: uploadUuid,
+        // Blob URLs omitted — fill in progressively below.
+        id: -1,
+        username,
+        workflow_name: workflowName,
+        prompt_data: JSON.stringify(promptPayload),
+        execution_time_seconds: executionTimeMs / 1000,
+        created_at: new Date().toISOString(),
+        status: "completed",
+        outputs: [
+          {
+            id: -1,
+            generation_id: -1,
+            filename: originalFilename,
+            filepath: `${uploadUuid}.${originalFilename.split(".").pop() || "png"}`,
+            content_type: `image/${outputFormat}`,
+            size: 0,
+          },
+        ],
+        abort: () => uploadAbort.abort(),
+      });
+      mark(uploadUuid, "pending-added");
+
+      // Track blob URLs so we can register them with the zustand entry
+      // once generated (for Output panel cleanup on dismissal).
+      let thumbBlobUrl: string | undefined;
+      let midBlobUrl: string | undefined;
+      let fullBlobUrl: string | undefined;
+      let variants: Awaited<ReturnType<typeof createImageVariants>>;
+      try {
+        variants = await createImageVariants(outputUrl, {
+          diagTag: uploadUuid,
+          onFullReady: (blob) => {
+            fullBlobUrl = URL.createObjectURL(blob);
+            pendingHistory.updatePending(uploadUuid, { fullBlobUrl });
+          },
+          onThumbReady: (blob) => {
+            thumbBlobUrl = URL.createObjectURL(blob);
+            pendingHistory.updatePending(uploadUuid, { thumbBlobUrl });
+          },
+          onMidReady: (blob) => {
+            midBlobUrl = URL.createObjectURL(blob);
+            pendingHistory.updatePending(uploadUuid, { midBlobUrl });
+          },
+        });
+      } catch (e) {
+        console.error("[history] variant generation failed:", e);
+        toast.error("Could not prepare thumbnail");
+        pendingHistory.removePending(uploadUuid);
+        return;
+      }
+
+      // All variants ready — update the zustand entry with blob URLs
+      // so the Output panel also uses the lightweight variants and so
+      // the blob URLs get revoked when the Output card is dismissed.
+      updateHistory(historyId, {
+        previewUrl: midBlobUrl,
+        originalUrl: fullBlobUrl,
+        outputUrl: midBlobUrl,
+        confirmed: false,
+        localBlobUrls: [thumbBlobUrl, midBlobUrl, fullBlobUrl].filter(
+          (u): u is string => Boolean(u)
+        ),
+      });
+
       const doUpload = () =>
         uploadHistoryEntry({
           uuid: uploadUuid,
@@ -283,7 +329,8 @@ export function GenerateForm() {
           executionTimeSeconds: executionTimeMs / 1000,
           original: variants.full,
           originalFilename,
-          originalContentType,
+          originalContentType:
+            variants.full.type || `image/${outputFormat}`,
           thumb: variants.thumb,
           mid: variants.mid,
           signal: uploadAbort.signal,
@@ -314,48 +361,8 @@ export function GenerateForm() {
         );
       };
 
-      pendingHistory.addPending({
-        pending: true,
-        uuid: uploadUuid,
-        thumbBlobUrl,
-        midBlobUrl,
-        fullBlobUrl,
-        // ServerGeneration shape — filled with values that match what
-        // the card renderer reads. `id: -1` is fine because pending
-        // entries are only matched by `pending: true`, never by id.
-        id: -1,
-        username,
-        workflow_name: workflowName,
-        prompt_data: JSON.stringify(promptPayload),
-        execution_time_seconds: executionTimeMs / 1000,
-        created_at: new Date().toISOString(),
-        status: "completed",
-        outputs: [
-          {
-            id: -1,
-            generation_id: -1,
-            filename: originalFilename,
-            filepath: `${uploadUuid}.${originalFilename.split(".").pop() || "png"}`,
-            content_type: originalContentType,
-            size: variants.full.size,
-          },
-        ],
-        retry,
-        abort: () => uploadAbort.abort(),
-      });
-      mark(uploadUuid, "pending-added");
-
-      // Also link blob URLs into the zustand entry so the Output panel
-      // picks them up (so right-click / drag / ImageDialog in Output
-      // work against the lightweight variants) and so blob URLs get
-      // revoked when the Output card is dismissed.
-      updateHistory(historyId, {
-        previewUrl: midBlobUrl,
-        originalUrl: fullBlobUrl,
-        outputUrl: midBlobUrl,
-        confirmed: false,
-        localBlobUrls: [thumbBlobUrl, midBlobUrl, fullBlobUrl],
-      });
+      // Now that retry closure exists, wire it into the pending entry.
+      pendingHistory.updatePending(uploadUuid, { retry });
 
       try {
         let res;
@@ -363,16 +370,11 @@ export function GenerateForm() {
           res = await doUpload();
         } catch (innerErr) {
           if (innerErr instanceof UploadError && innerErr.status === 409) {
-            // UUID collision — astronomically unlikely, but spec mandates
-            // one retry with a fresh uuid. If THAT collides too, something
-            // is fundamentally broken; let the outer catch handle it.
-            console.error("[history] UUID collision on", uploadUuid, "— retrying with fresh uuid");
-            if (
-              typeof crypto === "undefined" ||
-              !("randomUUID" in crypto)
-            ) {
-              throw innerErr;
-            }
+            console.error(
+              "[history] UUID collision on",
+              uploadUuid,
+              "— retrying with fresh uuid"
+            );
             const freshUuid = crypto.randomUUID();
             res = await uploadHistoryEntry({
               uuid: freshUuid,
@@ -382,7 +384,8 @@ export function GenerateForm() {
               executionTimeSeconds: executionTimeMs / 1000,
               original: variants.full,
               originalFilename,
-              originalContentType,
+              originalContentType:
+                variants.full.type || `image/${outputFormat}`,
               thumb: variants.thumb,
               mid: variants.mid,
               signal: uploadAbort.signal,
@@ -403,18 +406,11 @@ export function GenerateForm() {
         triggerHistoryRefresh();
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") {
-          // User deleted the pending entry — pending-history already
-          // revoked the blob URLs. Also drop the zustand entry so the
-          // Output panel doesn't keep rendering dangling <img src>
-          // pointing at revoked URLs.
           useHistoryStore.getState().remove(historyId);
           return;
         }
         const msg = e instanceof Error ? e.message : "Upload failed";
         pendingHistory.markError(uploadUuid, msg);
-        // Zustand entry keeps the blob URLs so the Output panel stays
-        // usable; confirmed remains false so localStorage doesn't
-        // persist a dead entry.
       }
     }
 

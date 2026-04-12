@@ -376,17 +376,17 @@ function ServerEntryCard({
   const uploadError = pendingEntry?.uploadError;
 
   const thumbSrc = pendingEntry
-    ? pendingEntry.thumbBlobUrl
+    ? (pendingEntry.thumbBlobUrl ?? null)
     : firstImage
       ? imgUrl(firstImage.filepath, "thumb")
       : null;
   const midSrc = pendingEntry
-    ? pendingEntry.midBlobUrl
+    ? (pendingEntry.midBlobUrl ?? null)
     : firstImage
       ? imgUrl(firstImage.filepath, "mid")
       : null;
   const fullSrc = pendingEntry
-    ? pendingEntry.fullBlobUrl
+    ? (pendingEntry.fullBlobUrl ?? null)
     : firstImage
       ? imgUrl(firstImage.filepath)
       : null;
@@ -469,6 +469,8 @@ function ServerEntryCard({
               }}
             />
           </ImageDialog>
+        ) : pendingEntry ? (
+          <div className="h-[140px] w-[140px] animate-pulse rounded-md border border-border bg-muted/80" />
         ) : (
           <div className="flex h-[140px] w-[140px] items-center justify-center rounded-md border border-border bg-muted">
             <History className="h-6 w-6 text-muted-foreground/40" />
