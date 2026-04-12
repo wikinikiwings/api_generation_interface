@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    if (!/^[0-9a-f-]{36}$/i.test(uuid)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
       return NextResponse.json(
         { error: "valid uuid is required" },
         { status: 400 }

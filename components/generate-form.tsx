@@ -15,7 +15,7 @@ import { useUser } from "@/app/providers/user-provider";
 import { triggerHistoryRefresh } from "@/components/history-sidebar";
 import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
-import { uploadHistoryEntry } from "@/lib/history-upload";
+import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
 import * as pendingHistory from "@/lib/pending-history";
 import type {
   AspectRatio,
@@ -298,6 +298,7 @@ export function GenerateForm() {
               originalUrl: res.fullUrl,
               outputUrl: res.midUrl,
               confirmed: true,
+              localBlobUrls: undefined,
             });
             triggerHistoryRefresh();
           },
@@ -354,7 +355,39 @@ export function GenerateForm() {
       });
 
       try {
-        const res = await doUpload();
+        let res;
+        try {
+          res = await doUpload();
+        } catch (innerErr) {
+          if (innerErr instanceof UploadError && innerErr.status === 409) {
+            // UUID collision — astronomically unlikely, but spec mandates
+            // one retry with a fresh uuid. If THAT collides too, something
+            // is fundamentally broken; let the outer catch handle it.
+            console.error("[history] UUID collision on", uploadUuid, "— retrying with fresh uuid");
+            if (
+              typeof crypto === "undefined" ||
+              !("randomUUID" in crypto)
+            ) {
+              throw innerErr;
+            }
+            const freshUuid = crypto.randomUUID();
+            res = await uploadHistoryEntry({
+              uuid: freshUuid,
+              username,
+              workflowName,
+              promptData: promptPayload,
+              executionTimeSeconds: executionTimeMs / 1000,
+              original: variants.full,
+              originalFilename,
+              originalContentType,
+              thumb: variants.thumb,
+              mid: variants.mid,
+              signal: uploadAbort.signal,
+            });
+          } else {
+            throw innerErr;
+          }
+        }
         pendingHistory.confirmPending(uploadUuid);
         updateHistory(historyId, {
           serverGenId: res.serverGenId,
@@ -362,6 +395,7 @@ export function GenerateForm() {
           originalUrl: res.fullUrl,
           outputUrl: res.midUrl,
           confirmed: true,
+          localBlobUrls: undefined,
         });
         triggerHistoryRefresh();
       } catch (e) {
