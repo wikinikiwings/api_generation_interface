@@ -112,9 +112,12 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
 
   // Sibling list for in-dialog prev/next nav. Shares the same filter
   // window as the sidebar so what you see is what you can navigate.
-  // Note: useHistory is effectively called twice (once directly, once
-  // inside useHistorySiblings). Refetches coalesce via the reqIdRef
-  // guard in useHistory, so this is near-free.
+  // Note: useHistory is called twice here (once directly above, once
+  // inside useHistorySiblings). Each call maintains its own fetch
+  // state, so HISTORY_REFRESH_EVENT triggers two parallel GET
+  // /api/history requests while the sidebar is mounted. Observable
+  // but not load-bearing — a follow-up can lift items into a shared
+  // context to eliminate the duplicate fetch if perf becomes a concern.
   const {
     siblings: navSiblings,
     loadMore: navLoadMore,

@@ -52,7 +52,7 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
   // Seed with the clicked entry's id so that if the sibling array is
   // empty or doesn't yet contain the entry, we still render the trigger
   // entry rather than crashing.
-  const siblingsList = siblings ?? [];
+  const siblingsList = React.useMemo(() => siblings ?? [], [siblings]);
   const hasSiblings = siblingsList.length > 1;
 
   const [currentId, setCurrentId] = React.useState<string>(() => {
