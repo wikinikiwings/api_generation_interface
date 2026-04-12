@@ -79,12 +79,15 @@ export function genToHistoryEntry(gen: ServerGeneration): HistoryEntry | null {
   let fullUrl: string | undefined;
 
   if (isPending(gen)) {
-    // Pending: use blob URLs. Require at least a mid or full blob to be
-    // renderable; otherwise skip — the user shouldn't be able to navigate
-    // to an entry that has nothing to display.
-    midUrl = gen.midBlobUrl ?? gen.fullBlobUrl;
-    fullUrl = gen.fullBlobUrl ?? gen.midBlobUrl;
-    if (!midUrl || !fullUrl) return null;
+    // Require both mid and full blobs. A pending entry with only a mid
+    // blob is renderable in the sidebar skeleton, but `originalUrl` must
+    // point at the real full-resolution blob — otherwise ImageDialog's
+    // Download button would save a mid-res image under a "full-res" name.
+    // Entries without fullBlobUrl are simply not navigable via sibling
+    // arrows until the full variant finishes encoding.
+    if (!gen.midBlobUrl || !gen.fullBlobUrl) return null;
+    midUrl = gen.midBlobUrl;
+    fullUrl = gen.fullBlobUrl;
   } else {
     if (!firstImage) return null;
     midUrl = buildServerImageUrl(firstImage.filepath, "mid");
@@ -93,11 +96,11 @@ export function genToHistoryEntry(gen: ServerGeneration): HistoryEntry | null {
 
   return {
     id: stableGenerationId(gen),
-    taskId: `server-${gen.id}`,
+    taskId: isPending(gen) ? `pending-${gen.uuid}` : `server-${gen.id}`,
     provider: (data.provider as HistoryEntry["provider"]) || "wavespeed",
     prompt: data.prompt || "",
     model: (data.model as HistoryEntry["model"]) || "nano-banana-pro",
-    aspectRatio: (data.aspectRatio as HistoryEntry["aspectRatio"]) || undefined,
+    aspectRatio: data.aspectRatio as HistoryEntry["aspectRatio"] | undefined,
     resolution: (data.resolution as HistoryEntry["resolution"]) || "2k",
     outputFormat: (data.outputFormat as HistoryEntry["outputFormat"]) || "png",
     status: "completed",
