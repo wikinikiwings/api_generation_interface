@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ImageDialog } from "@/components/image-dialog";
 import { useUser } from "@/app/providers/user-provider";
 import { cn, copyToClipboard, formatFullDate } from "@/lib/utils";
-import { preloadImages } from "@/lib/image-cache";
+import { preloadImages, useCachedImage } from "@/lib/image-cache";
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { useHistoryStore } from "@/stores/history-store";
@@ -387,21 +387,21 @@ function ServerEntryCard({
   const pendingEntry = isPending(gen) ? gen : null;
   const uploadError = pendingEntry?.uploadError;
 
-  const thumbSrc = pendingEntry
-    ? (pendingEntry.thumbBlobUrl ?? null)
-    : firstImage
-      ? imgUrl(firstImage.filepath, "thumb")
-      : null;
-  const midSrc = pendingEntry
-    ? (pendingEntry.midBlobUrl ?? null)
-    : firstImage
-      ? imgUrl(firstImage.filepath, "mid")
-      : null;
-  const fullSrc = pendingEntry
-    ? (pendingEntry.fullBlobUrl ?? null)
-    : firstImage
-      ? imgUrl(firstImage.filepath)
-      : null;
+  const thumbServer = !pendingEntry && firstImage ? imgUrl(firstImage.filepath, "thumb") : null;
+  const midServer = !pendingEntry && firstImage ? imgUrl(firstImage.filepath, "mid") : null;
+  const fullServer = !pendingEntry && firstImage ? imgUrl(firstImage.filepath) : null;
+
+  // For server-backed entries, prefer the in-memory blob URL when the
+  // image-cache has it (instant render, bypasses DevTools cache
+  // disabling). Fall back to the direct server URL while the cache
+  // is warming. Pending entries already carry local blob URLs.
+  const cachedThumb = useCachedImage(thumbServer);
+  const cachedMid = useCachedImage(midServer);
+  const cachedFull = useCachedImage(fullServer);
+
+  const thumbSrc = pendingEntry?.thumbBlobUrl ?? cachedThumb ?? thumbServer;
+  const midSrc = pendingEntry?.midBlobUrl ?? cachedMid ?? midServer;
+  const fullSrc = pendingEntry?.fullBlobUrl ?? cachedFull ?? fullServer;
 
   // Local state so we can fall back thumb → original if the pre-rendered
   // thumbnail is missing on disk (legacy rows, failed resize, etc.).

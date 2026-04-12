@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { HistoryEntry } from "@/types/wavespeed";
+import { useCachedImage } from "@/lib/image-cache";
 
 export interface ImageDialogProps {
   entry: HistoryEntry;
@@ -178,6 +179,16 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
     triedFallbackRef.current = false;
   }, [currentEntry.outputUrl]);
 
+  // Consult the image-cache for the preview URL. If cached, we render
+  // from memory; if not, we fall back to the direct URL which will
+  // populate the cache as it loads.
+  const cachedPreview = useCachedImage(
+    currentEntry.outputUrl && !currentEntry.outputUrl.startsWith("blob:")
+      ? currentEntry.outputUrl
+      : null
+  );
+  const effectivePreviewSrc = cachedPreview ?? previewSrc;
+
   // Keyboard navigation: ← / → switch siblings while the dialog is open.
   React.useEffect(() => {
     if (!open || !hasSiblings) return;
@@ -303,7 +314,7 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
         <div className="flex flex-col items-center gap-3">
           <div className="group/nav relative overflow-hidden rounded-lg bg-background/20 shadow-2xl">
             <ZoomableImage
-              src={previewSrc}
+              src={effectivePreviewSrc}
               alt={currentEntry.prompt}
               originalUrl={effectiveDownloadUrl}
               downloadFilename={`wavespeed-${currentEntry.taskId || currentEntry.id}.${currentEntry.outputFormat}`}

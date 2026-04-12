@@ -16,6 +16,7 @@ import { triggerHistoryRefresh } from "@/components/history-sidebar";
 import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
+import { cacheBlob } from "@/lib/image-cache";
 import * as pendingHistory from "@/lib/pending-history";
 import type {
   AspectRatio,
@@ -331,6 +332,13 @@ export function GenerateForm() {
         pendingHistory.clearError(uploadUuid);
         doUpload().then(
           (res) => {
+            // Pre-populate the image-cache with the exact bytes we already
+            // have on the client. Later clicks on this entry render from
+            // memory — no round-trip, works even with DevTools "Disable
+            // cache" on.
+            cacheBlob(res.thumbUrl, variants.thumb);
+            cacheBlob(res.midUrl, variants.mid);
+            cacheBlob(res.fullUrl, variants.full);
             pendingHistory.confirmPending(uploadUuid);
             updateHistory(historyId, {
               serverGenId: res.serverGenId,
@@ -385,6 +393,13 @@ export function GenerateForm() {
             throw innerErr;
           }
         }
+        // Pre-populate the image-cache with the exact bytes we already
+        // have on the client. Later clicks on this entry render from
+        // memory — no round-trip, works even with DevTools "Disable
+        // cache" on.
+        cacheBlob(res.thumbUrl, variants.thumb);
+        cacheBlob(res.midUrl, variants.mid);
+        cacheBlob(res.fullUrl, variants.full);
         pendingHistory.confirmPending(uploadUuid);
         updateHistory(historyId, {
           serverGenId: res.serverGenId,
