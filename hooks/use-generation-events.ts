@@ -27,9 +27,9 @@ export function useGenerationEvents(username: string | null): void {
 
     const refresh = () => broadcastHistoryRefresh();
 
-    // Both event types trigger the same local refresh bus — useHistory
-    // listeners refetch. The event payload is intentionally unused
-    // here: we rely on the fetch being cheap and idempotent.
+    // `generation.created` triggers a full refetch via the local refresh
+    // bus. The event payload is intentionally unused — the fetch is cheap
+    // and idempotent.
     es.addEventListener("generation.created", refresh);
 
     // `generation.deleted` carries `{ id: number }`. Drop any Zustand
