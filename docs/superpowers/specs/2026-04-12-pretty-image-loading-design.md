@@ -327,9 +327,53 @@ This section is written for an agent picking up follow-ups later. Each item is s
 
 ---
 
+## Post-ship notes (2026-04-12, end of day)
+
+The original 10-task plan landed cleanly in 10 commits (`0693ac6` → `bb9d300`,
+plus `8008852` gitignore). Build green, curtain reveal working.
+
+Three follow-up fixes surfaced during hands-on testing and were applied:
+
+1. **`f86852d` — Dialog sizing.** Plan's `fit="natural"` used
+   `max-width: 100%; max-height: 100%` on the sharp `<img>`, which resolves
+   against the inline-block BlurUpImage root — circular when the root has no
+   explicit size. Fix: added a `sharpClassName` prop; dialog passes
+   `max-h-[82vh] max-w-[92vw] object-contain` directly onto the sharp layer.
+   Globals CSS stripped the circular percentage caps from
+   `.blur-up-root[data-fit="natural"] .blur-up-sharp`.
+
+2. **`cd6cbdd` — Skip curtain for cached images.** User feedback: the
+   reveal is meaningful only for genuinely-loading images; cache-warm
+   re-renders (sidebar scroll, reopening history) should paint plainly.
+   Fix: if the sharp `onLoad` fires within 60 ms of mount, jump straight
+   to the `done` state with no curtain animation.
+
+3. **Delete/sync race cascade.** The Output/Sidebar delete mechanism
+   interacted with the concurrent-generation refetch path in ways that
+   were hard to chase down. Multiple patches landed (`ecc1a84`,
+   `ba9638e`, `8cb1c37`, `e994900`, `c2cb848`, `5f7db4b`, `dee4569`,
+   `06a0b90`, and an attempted-then-reverted `168fe5d` / `f00bb41`)
+   progressively adding optimistic cleanup, source-level filtering,
+   debug logging, and HMR resilience. At time of writing, the dev-mode
+   behavior is still flaky: a deleted row can re-surface in the
+   sidebar after a concurrent generation completes, and HMR during
+   testing can cascade the flakiness further.
+
+   **The right response is a redesign, not more patches.** See
+   `docs/superpowers/specs/2026-04-12-history-sync-mechanism-redesign.md`
+   for the fresh-start design the next agent should pick up. The
+   instrumentation from `06a0b90` (`lib/history-debug.ts`) survives
+   into the redesign and should be retained.
+
+   **Current state of the file tree:** the existing mechanism works
+   well enough in production (no HMR, no race between concurrent
+   refetches), so this is a dev-experience and maintainability issue,
+   not a prod-blocking bug. BlurUpImage itself is solid.
+
 ## References
 
 - Animation style selected in visual-companion session 2026-04-12 (mockup file: `.superpowers/brainstorm/1988-1776019611/content/curtain-reveal.html`)
 - Variant pipeline: `docs/superpowers/specs/2026-04-12-history-thumbnail-first-design.md`
 - Existing image cache: `lib/image-cache.ts`
 - Deferred SW cache: `docs/superpowers/specs/2026-04-12-sw-image-cache-future.md`
+- Redesign task: `docs/superpowers/specs/2026-04-12-history-sync-mechanism-redesign.md`
