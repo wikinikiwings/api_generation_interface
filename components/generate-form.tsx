@@ -15,6 +15,7 @@ import { useUser } from "@/app/providers/user-provider";
 import { triggerHistoryRefresh } from "@/components/history-sidebar";
 import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
+import { mark } from "@/lib/history-timings";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
 import * as pendingHistory from "@/lib/pending-history";
 import type {
@@ -232,9 +233,10 @@ export function GenerateForm() {
         return;
       }
       const uploadUuid = crypto.randomUUID();
+      mark(uploadUuid, "gen-complete");
       let variants: Awaited<ReturnType<typeof createImageVariants>>;
       try {
-        variants = await createImageVariants(outputUrl);
+        variants = await createImageVariants(outputUrl, uploadUuid);
       } catch (e) {
         console.error("[history] variant generation failed:", e);
         toast.error("Could not prepare thumbnail");
@@ -341,6 +343,7 @@ export function GenerateForm() {
         retry,
         abort: () => uploadAbort.abort(),
       });
+      mark(uploadUuid, "pending-added");
 
       // Also link blob URLs into the zustand entry so the Output panel
       // picks them up (so right-click / drag / ImageDialog in Output

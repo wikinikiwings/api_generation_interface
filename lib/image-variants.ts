@@ -1,3 +1,5 @@
+import { mark } from "./history-timings";
+
 /**
  * Client-side image variant generator.
  *
@@ -27,17 +29,22 @@ export interface ImageVariants {
 }
 
 export async function createImageVariants(
-  source: Blob | string
+  source: Blob | string,
+  diagTag?: string
 ): Promise<ImageVariants> {
+  if (diagTag && typeof source === "string") mark(diagTag, "fetch-start");
   const full =
     typeof source === "string" ? await fetchAsBlob(source) : source;
+  if (diagTag) mark(diagTag, "fetch-done");
 
   const bitmap = await decode(full);
+  if (diagTag) mark(diagTag, "decode-done");
   try {
     const [thumb, mid] = await Promise.all([
       encodeVariant(bitmap, THUMB_WIDTH, THUMB_QUALITY),
       encodeVariant(bitmap, MID_WIDTH, MID_QUALITY),
     ]);
+    if (diagTag) mark(diagTag, "encode-done");
     return { thumb, mid, full };
   } finally {
     // ImageBitmap is GC-able but close() releases GPU memory eagerly.
