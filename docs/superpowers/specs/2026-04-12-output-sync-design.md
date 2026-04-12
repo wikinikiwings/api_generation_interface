@@ -223,9 +223,7 @@ rows flow through as before.
 
 ### Follow-ups still open
 
-- The "originating-device delete" edge case flagged in final review
-  (delete arrives from device B while device A still holds the Zustand
-  entry with `serverGenId` for that row) is not yet handled. The row
-  disappears from server history but the local Output card persists
-  until the next manual interaction or reload. Low-priority; tracked
-  here for future work.
+- The "originating-device delete" edge case (delete arrives from device
+  B while device A still holds the Zustand entry with `serverGenId`)
+  was closed by the `2026-04-12-output-delete-symmetry` work:
+  `useGenerationEvents` now cleans Zustand on `generation.deleted`.
