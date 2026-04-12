@@ -103,23 +103,36 @@ function imgUrl(filepath: string, variant?: "thumb" | "mid"): string {
 const REFRESH_EVENT = HISTORY_REFRESH_EVENT;
 export { HISTORY_REFRESH_EVENT as REFRESH_EVENT_NAME };
 
-// Debounce rapid triggerHistoryRefresh() calls (e.g. several generations
-// finishing back-to-back) into a single refetch. 1500ms is long enough to
-// coalesce a burst but short enough to feel responsive.
+// Coalesce rapid triggers, but fire the FIRST one immediately so
+// confirmPending doesn't have to wait 1.5s for the sidebar to pick up
+// the new row. Classic leading-edge throttle with trailing debounce:
+//   t=0   : first call fires immediately, opens a 1.5s cooldown
+//   t<1.5s: subsequent calls schedule a trailing fetch at end-of-window
+//   t=1.5s: if any trailing fetch scheduled, fire it; close window
 //
 // The trigger uses broadcastHistoryRefresh() so the signal also reaches
 // other open tabs of the same app via BroadcastChannel — not just the
 // local CustomEvent. See hooks/use-history.ts for the cross-tab plumbing.
 const REFRESH_DEBOUNCE_MS = 1500;
 let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingTrailing = false;
 
 export function triggerHistoryRefresh() {
   if (typeof window === "undefined") return;
-  if (refreshTimer) clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => {
-    refreshTimer = null;
+  if (refreshTimer === null) {
+    // Cold window — fire now, open the cooldown.
     broadcastHistoryRefresh();
-  }, REFRESH_DEBOUNCE_MS);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      if (pendingTrailing) {
+        pendingTrailing = false;
+        broadcastHistoryRefresh();
+      }
+    }, REFRESH_DEBOUNCE_MS);
+    return;
+  }
+  // Inside cooldown — mark a trailing fetch to run at window close.
+  pendingTrailing = true;
 }
 
 function toDateInput(d: Date): string {

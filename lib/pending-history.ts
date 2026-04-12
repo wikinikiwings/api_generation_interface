@@ -119,23 +119,31 @@ export function clearError(uuid: string): void {
 }
 
 /**
- * Mark an entry as server-confirmed. The entry is removed from the
- * pending map immediately (the sidebar will switch to showing the
- * server row on next refresh), and its blob URLs are revoked after
- * a short grace window so in-flight <img> elements aren't torn down
- * before the swap completes.
+ * Mark an entry as server-confirmed WITHOUT removing it from the map.
+ * The sidebar's useHistory merge logic will hide it from view as soon
+ * as a matching server row arrives (dedup by uuid). Keeping the entry
+ * alive in the meantime prevents the ~1.5s "card disappears → server
+ * refresh → card reappears" flash.
+ *
+ * Eviction happens after a generous timeout (30s): if the server
+ * refresh hasn't brought in the uuid by then, something is wrong and
+ * we drop the pending entry to free its blob URLs.
  */
 export function confirmPending(uuid: string): void {
   const cur = map.get(uuid);
   if (!cur) return;
-  map.delete(uuid);
-  snapshot = null;
-  emit();
-  scheduleRevoke(
-    [cur.thumbBlobUrl, cur.midBlobUrl, cur.fullBlobUrl].filter(
-      (u): u is string => Boolean(u)
-    )
-  );
+  setTimeout(() => {
+    const still = map.get(uuid);
+    if (!still) return;
+    snapshot = null;
+    map.delete(uuid);
+    emit();
+    revoke(
+      [still.thumbBlobUrl, still.midBlobUrl, still.fullBlobUrl].filter(
+        (u): u is string => Boolean(u)
+      )
+    );
+  }, 30_000);
 }
 
 /** Remove a pending entry without grace-period revocation (user-deleted). */
