@@ -9,6 +9,7 @@ import { Select, Label } from "@/components/ui/select";
 import { ImageDropzone, type DroppedImage } from "@/components/image-dropzone";
 import { useHistoryStore } from "@/stores/history-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { usePromptStore } from "@/stores/prompt-store";
 import { MODELS_META } from "@/lib/providers/models";
 import type { ModelId } from "@/lib/providers/types";
 import { useUser } from "@/app/providers/user-provider";
@@ -127,9 +128,8 @@ export function GenerateForm() {
     [modelMeta]
   );
   const { username } = useUser();
-  const [prompt, setPrompt] = React.useState(
-    "Make the hamburger made of glass."
-  );
+  const prompt = usePromptStore((s) => s.prompt);
+  const setPrompt = usePromptStore((s) => s.setPrompt);
   const [images, setImages] = React.useState<DroppedImage[]>([]);
   const [resolution, setResolution] = React.useState<Resolution>("2k");
   const [aspectRatio, setAspectRatio] = React.useState<string>("");
