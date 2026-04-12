@@ -797,3 +797,48 @@ This task is verification only. If temporary logging was added in Step 7, remove
 - Session-cookie auth on the SSE endpoint (pre-existing security posture unchanged).
 - Ring-buffer event recovery.
 - Polling fallback (the refetch-on-reconnect path is sufficient).
+
+---
+
+## Implementation log (2026-04-12)
+
+All 7 implementation tasks shipped directly to `main`. Task 8 (manual E2E)
+was partially automated (`npx tsc --noEmit` clean, `npm run build` succeeds
+with `/api/history/stream` registered as a dynamic function route); the
+two-device browser verification was handed to the human operator.
+
+| # | Commit | Subject |
+|---|--------|---------|
+| 1 | `fb65155` | `feat(history-db): add getGenerationById helper` |
+| 2 | `e349bbe` | `feat(sse): add in-memory subscriber registry + broadcast helper` |
+| 3 | `3e494dd` | `feat(api/history/stream): SSE endpoint for history events` |
+| 4 | `d16f9db` | `feat(api/history): broadcast SSE events on create and delete` |
+| 5 | `5196e0f` | `refactor(history): extract server-gen adapter to shared module` |
+| 6 | `278ba3d` | `feat(hooks): add useGenerationEvents SSE subscriber hook` |
+| 7 | `498c27c` | `feat(output-area): merge cross-device server entries + SSE sync` |
+
+### Post-implementation fix — pending-uuid dedup (`d446681`)
+
+Browser testing surfaced a same-device race: the SSE `generation.created`
+event fired in parallel with the POST response, so `useHistory` refetched
+and the new server row entered the merge *before* the Zustand entry
+received its `serverGenId`. Result: a brief duplicate card — the local
+blob-URL entry rendered instantly, and a second card using the server's
+`mid_<uuid>.jpg` URL flashed as a "broken" image while the browser
+fetched bytes it hadn't cached yet. Once the POST response landed,
+`serverGenId` was set, the dedup filter kicked in, and the duplicate
+disappeared. Cross-device behavior was unaffected.
+
+**Fix** (`components/output-area.tsx` + `hooks/use-history.ts`):
+
+- Exported the existing private `extractUuid(filepath)` helper from
+  `hooks/use-history.ts`.
+- `OutputArea` now also subscribes to `lib/pending-history` via
+  `useSyncExternalStore` and builds a `Set<uuid>` of in-flight uploads
+  from THIS device.
+- The server-row iteration skips any row whose output filepath uuid is
+  in the pending set. The existing `serverGenId` filter still handles
+  the post-race steady state (and any legacy rows with non-uuid
+  filenames, for which `extractUuid` returns null).
+- On other devices `pending` is empty, so cross-device rows flow
+  through unchanged.

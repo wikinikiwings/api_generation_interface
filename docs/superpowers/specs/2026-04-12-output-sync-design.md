@@ -192,3 +192,40 @@ None for this spec. Streaming is hard to unit-test without significant mock infr
 - **Ring buffer for dropped-event recovery.** If users report stale state after long disconnects, implement a per-user ring buffer of last ~200 events keyed by SSE `id:`. Client sends `Last-Event-ID` on reconnect; server replays. Not needed if refetch-on-reconnect remains reliable.
 - **Typed event schema.** Extract event types into a shared module used by both server and client. Currently JSON-by-convention.
 - **Mobile background behavior.** Chrome for Android / iOS Safari may suspend `EventSource` when the tab is backgrounded. Re-foreground should trigger reconnect automatically, but worth spot-checking if we add PWA or fullscreen modes.
+
+## Implementation notes (2026-04-12)
+
+Shipped in 7 sequential commits (`fb65155` → `498c27c`) on `main`. See
+the corresponding plan (`docs/superpowers/plans/2026-04-12-output-sync.md`)
+for the per-task log.
+
+One edge case surfaced during browser testing that this spec did not
+anticipate: **same-device duplicate flash during the POST/SSE race.**
+Because the SSE `generation.created` event travels on a separate
+connection from the POST response, the client can refetch `useHistory`
+and re-merge *before* the originating device's Zustand entry has its
+`serverGenId` populated. In that window, the existing `serverGenId`
+dedup is empty, so the server row enters the merge as a second card —
+visible briefly as a "broken" image tile (server `mid_<uuid>.jpg` URL
+that the browser has not yet fetched) next to the local blob-URL card.
+
+**Resolution** (`d446681`): the `OutputArea` merge now also keys on
+`uuid`. Pending uploads from this device are read from
+`lib/pending-history` via `useSyncExternalStore`, and server rows whose
+output filepath uuid matches any pending uuid are skipped. The existing
+`serverGenId` path still covers the post-race steady state and
+cross-device events. `extractUuid` was promoted from a file-local
+helper in `hooks/use-history.ts` to a named export for reuse.
+
+This fix preserved all cross-device behavior: on a receiving device,
+`pending` is always empty, so the uuid filter is a no-op and server
+rows flow through as before.
+
+### Follow-ups still open
+
+- The "originating-device delete" edge case flagged in final review
+  (delete arrives from device B while device A still holds the Zustand
+  entry with `serverGenId` for that row) is not yet handled. The row
+  disappears from server history but the local Output card persists
+  until the next manual interaction or reload. Low-priority; tracked
+  here for future work.
