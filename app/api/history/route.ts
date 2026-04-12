@@ -10,7 +10,8 @@ import path from "node:path";
 
 // sharp is no longer imported — client pre-generates thumb/mid.
 
-// Read more generously than /api/generate/submit since we write image files.
+// Uploads are local + variants are pre-built client-side (no server-side
+// resize), so 30s is ample for even multi-MB originals on LAN.
 export const maxDuration = 30;
 
 /**
@@ -149,6 +150,11 @@ export async function POST(request: NextRequest) {
       throw err;
     }
 
+    // Sanitize the display filename: strip any path separators a client
+    // may have sent and cap length. `originalFilename` (actual on-disk
+    // name) is uuid-derived and already safe.
+    const displayFilename = path.basename(original.name).slice(0, 255);
+
     const id = saveGeneration({
       username,
       workflowName,
@@ -156,7 +162,7 @@ export async function POST(request: NextRequest) {
       executionTimeSeconds,
       outputs: [
         {
-          filename: original.name,
+          filename: displayFilename,
           filepath: originalFilename,
           contentType: original.type,
           size: original.size,
@@ -191,9 +197,12 @@ async function writeAndTrack(
   file: File,
   tracker: string[]
 ): Promise<void> {
+  // Register BEFORE any I/O so the rollback sees this path even if
+  // another parallel write rejects while this one is still in flight.
+  // The rollback unlinks tolerate ENOENT via .catch(() => undefined).
+  tracker.push(filepath);
   const buffer = Buffer.from(await file.arrayBuffer());
   await fs.writeFile(filepath, buffer);
-  tracker.push(filepath);
 }
 
 /**
