@@ -244,3 +244,17 @@ None added. Matches the precedent set by `output-sync` — streaming/cross-tab b
 
 - If a structured undo becomes desirable, the server would need a soft-delete column (`deleted_at`) and a POST endpoint to clear it. The client could then show a toast with an Undo button that invokes the restore. Not planned.
 - If the SSE-event Zustand cleanup turns out to be the wrong place architecturally (e.g., we decide the store should never be mutated from a hook), promote it to a thin store-level action like `useHistoryStore.getState().removeByServerGenId(id)`.
+
+## Implementation notes (2026-04-12)
+
+Shipped in 5 sequential commits on `main`:
+
+- `cef3394` — `useGenerationEvents` parses `generation.deleted` payload and removes Zustand entries by `serverGenId` before broadcasting refresh.
+- `f40b590` — scope the now-stale "both event types trigger the same local refresh bus" comment to `generation.created` only (caught in code-quality review).
+- `98408b7` — remove the inline Zustand cleanup from `history-sidebar.tsx:handleDelete`; drop the `useHistoryStore` import that became unused.
+- `5f9d657` — add `handleRemove` in `OutputArea`: silent local dismiss when `serverGenId` is missing, otherwise `confirm → DELETE /api/history → toast`; wire it to `OutputCard.onRemove`.
+- `a2eb72d` — close the `output-sync` originating-device-delete follow-up in its spec.
+
+Manual verification (the Testing section above) passed on two concurrent browser profiles: Output trash now deletes server + Output + History symmetrically, cross-device delete propagates in ≤2s, and the originating-device-delete edge case from `output-sync` is resolved.
+
+No deviations from the design. `refetch()` in `history-sidebar.tsx:handleDelete` was intentionally left in place as a harmless redundancy (flagged by the final reviewer as a candidate for a future cleanup; not load-bearing).
