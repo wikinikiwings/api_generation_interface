@@ -30,13 +30,21 @@ export interface ImageDialogProps {
   siblings?: HistoryEntry[];
   /** Index of `entry` inside `siblings`. Required when siblings is set. */
   initialIndex?: number;
+  /**
+   * Fired when navigation advances within N positions of the tail of
+   * `siblings`, where `remainingAhead = siblings.length - currentIdx - 1`.
+   * Consumers typically call `loadMore()` in response. Throttled: only
+   * fires when `remainingAhead` strictly decreases from the last fire,
+   * so stuck-at-end arrow mashing doesn't re-trigger.
+   */
+  onNearEnd?: (remainingAhead: number) => void;
 }
 
 /**
  * Wraps a clickable thumbnail. On click, opens a full-size dialog
  * showing the generated image with a download button.
  */
-export function ImageDialog({ entry, children, downloadUrl, siblings, initialIndex = 0 }: ImageDialogProps) {
+export function ImageDialog({ entry, children, downloadUrl, siblings, initialIndex = 0, onNearEnd }: ImageDialogProps) {
   // Navigation state — which sibling is currently shown, tracked by id
   // (not index) so that a reactive siblings array (entries inserted /
   // removed while the dialog is open) keeps pointing at the right slide.
@@ -226,6 +234,37 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, hasSiblings, goPrev, goNext]);
+
+  // Near-end prefetch signal. Fires onNearEnd when navigation lands
+  // within 2 positions of the end of siblings, with strict-decrease
+  // throttling so a user mashing → at the tail doesn't re-trigger.
+  // Reset the throttle when siblings grow (a new batch loaded in).
+  const NEAR_END_THRESHOLD = 2;
+  const lastFiredRemainingRef = React.useRef<number | null>(null);
+  const lastSiblingsLenRef = React.useRef<number>(siblingsList.length);
+
+  React.useEffect(() => {
+    // Siblings grew (loadMore brought in more rows) → reset dedup so we
+    // can fire again when the user approaches the new tail.
+    if (siblingsList.length > lastSiblingsLenRef.current) {
+      lastFiredRemainingRef.current = null;
+    }
+    lastSiblingsLenRef.current = siblingsList.length;
+  }, [siblingsList.length]);
+
+  React.useEffect(() => {
+    if (!open || !hasSiblings || !onNearEnd) return;
+    if (currentIdx < 0) return;
+    const remaining = siblingsList.length - currentIdx - 1;
+    if (remaining > NEAR_END_THRESHOLD) return;
+    // Strict-decrease throttle: only fire when remaining gets smaller
+    // than the last value we fired at. Prevents hammering while the
+    // user sits on the last slide.
+    const last = lastFiredRemainingRef.current;
+    if (last !== null && remaining >= last) return;
+    lastFiredRemainingRef.current = remaining;
+    onNearEnd(remaining);
+  }, [open, hasSiblings, onNearEnd, currentIdx, siblingsList.length]);
 
   const effectiveDownloadUrl = currentDownloadUrl;
 
