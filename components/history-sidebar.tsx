@@ -10,7 +10,6 @@ import { cn, copyToClipboard, formatFullDate } from "@/lib/utils";
 import { preloadImages } from "@/lib/image-cache";
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
-import { mark } from "@/lib/history-timings";
 import { useHistoryStore } from "@/stores/history-store";
 import type { HistoryEntry } from "@/types/wavespeed";
 
@@ -390,15 +389,6 @@ function ServerEntryCard({
     : firstImage
       ? imgUrl(firstImage.filepath)
       : null;
-
-  React.useEffect(() => {
-    if (pendingEntry) mark(pendingEntry.uuid, "card-painted");
-    // Only care about the first paint for this uuid. If the pending entry
-    // updates (e.g. uploadError set), we don't re-mark — React runs this
-    // effect again but the mark() call on "card-painted" triggers the
-    // report which also GC-schedules. Subsequent re-marks just update the
-    // timestamp and silently re-report; harmless.
-  }, [pendingEntry]);
 
   // Local state so we can fall back thumb → original if the pre-rendered
   // thumbnail is missing on disk (legacy rows, failed resize, etc.).

@@ -15,7 +15,6 @@ import { useUser } from "@/app/providers/user-provider";
 import { triggerHistoryRefresh } from "@/components/history-sidebar";
 import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
-import { mark } from "@/lib/history-timings";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
 import * as pendingHistory from "@/lib/pending-history";
 import type {
@@ -228,7 +227,6 @@ export function GenerateForm() {
         return;
       }
       const uploadUuid = crypto.randomUUID();
-      mark(uploadUuid, "gen-complete");
 
       const hasImages = images.length > 0;
       const workflowName = `wavespeed:${activeProvider}/${selectedModel}/${
@@ -276,7 +274,6 @@ export function GenerateForm() {
         ],
         abort: () => uploadAbort.abort(),
       });
-      mark(uploadUuid, "pending-added");
 
       // Track blob URLs so we can register them with the zustand entry
       // once generated (for Output panel cleanup on dismissal).
@@ -286,7 +283,6 @@ export function GenerateForm() {
       let variants: Awaited<ReturnType<typeof createImageVariants>>;
       try {
         variants = await createImageVariants(outputUrl, {
-          diagTag: uploadUuid,
           onFullReady: (blob) => {
             fullBlobUrl = URL.createObjectURL(blob);
             pendingHistory.updatePending(uploadUuid, { fullBlobUrl });

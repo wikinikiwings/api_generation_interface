@@ -1,5 +1,3 @@
-import { mark } from "./history-timings";
-
 /**
  * Client-side image variant generator.
  *
@@ -32,28 +30,21 @@ export interface VariantCallbacks {
   onFullReady?: (blob: Blob) => void;
   onThumbReady?: (blob: Blob) => void;
   onMidReady?: (blob: Blob) => void;
-  diagTag?: string;
 }
 
 export async function createImageVariants(
   source: Blob | string,
   callbacks?: VariantCallbacks
 ): Promise<ImageVariants> {
-  const diagTag = callbacks?.diagTag;
-  if (diagTag && typeof source === "string") mark(diagTag, "fetch-start");
   const full =
     typeof source === "string" ? await fetchAsBlob(source) : source;
-  if (diagTag) mark(diagTag, "fetch-done");
   callbacks?.onFullReady?.(full);
 
   const bitmap = await decode(full);
-  if (diagTag) mark(diagTag, "decode-done");
   try {
     const thumb = await encodeVariant(bitmap, THUMB_WIDTH, THUMB_QUALITY);
-    if (diagTag) mark(diagTag, "thumb-done");
     callbacks?.onThumbReady?.(thumb);
     const mid = await encodeVariant(bitmap, MID_WIDTH, MID_QUALITY);
-    if (diagTag) mark(diagTag, "encode-done");
     callbacks?.onMidReady?.(mid);
     return { thumb, mid, full };
   } finally {
