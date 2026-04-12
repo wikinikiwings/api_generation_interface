@@ -8,6 +8,10 @@ import { ImageDialog } from "@/components/image-dialog";
 import { useUser } from "@/app/providers/user-provider";
 import { cn, copyToClipboard, formatFullDate } from "@/lib/utils";
 import { preloadImages, useCachedImage } from "@/lib/image-cache";
+import {
+  parsePromptData,
+  serverGenToHistoryEntry,
+} from "@/lib/server-gen-adapter";
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { useHistoryStore } from "@/stores/history-store";
@@ -17,68 +21,6 @@ export interface HistorySidebarProps {
   open: boolean;
   setOpen: (open: boolean) => void;
   className?: string;
-}
-
-interface ParsedPromptData {
-  prompt?: string;
-  resolution?: string;
-  aspectRatio?: string;
-  outputFormat?: string;
-  provider?: string;
-  model?: string;
-}
-
-function parsePromptData(raw: string): ParsedPromptData {
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    // Wavespeed-claude format: flat object with a top-level `prompt` key
-    // (alongside resolution, aspectRatio, outputFormat, provider, model).
-    if (typeof parsed.prompt === "string") {
-      return parsed as ParsedPromptData;
-    }
-    // Viewcomfy-claude format: flat object whose keys are prefixed with
-    // ComfyUI node ids, e.g. "123-inputs-text" or "45-prompt". The actual
-    // prompt text lives under the first key whose stripped name is
-    // "text" or "prompt". This mirrors viewcomfy's own extractPromptText
-    // logic verbatim so the same DB row decodes the same way in both apps.
-    const textKey = Object.keys(parsed).find((k) => {
-      const cleaned = k.replace(/^\d+-inputs-/, "").replace(/^\d+-/, "");
-      return cleaned === "text" || cleaned === "prompt";
-    });
-    if (textKey && typeof parsed[textKey] === "string") {
-      return { prompt: parsed[textKey] as string };
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
-
-/**
- * Adapter: ServerGeneration (snake_case, SQLite-shape) → HistoryEntry
- * (zustand-shape expected by <ImageDialog>). Builds a minimal valid object
- * with only the fields ImageDialog actually reads: outputUrl, prompt,
- * taskId, id, outputFormat. Everything else is filler so TS stays happy.
- */
-function serverGenToHistoryEntry(
-  gen: ServerGeneration,
-  data: ParsedPromptData,
-  fullSrc: string
-): HistoryEntry {
-  return {
-    id: String(gen.id),
-    taskId: `server-${gen.id}`,
-    provider: (data.provider as HistoryEntry["provider"]) || "wavespeed",
-    prompt: data.prompt || "",
-    model: (data.model as HistoryEntry["model"]) || "nano-banana-pro",
-    aspectRatio: (data.aspectRatio as HistoryEntry["aspectRatio"]) || undefined,
-    resolution: (data.resolution as HistoryEntry["resolution"]) || "2k",
-    outputFormat: (data.outputFormat as HistoryEntry["outputFormat"]) || "png",
-    status: "completed",
-    createdAt: Date.now(),
-    outputUrl: fullSrc,
-    inputThumbnails: [],
-  };
 }
 
 /** Build a URL for the local image-serving endpoint. */
