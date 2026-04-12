@@ -21,6 +21,7 @@ import {
 import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
 import { markGenerationDeleted } from "@/lib/history-deletions";
+import { debugHistory } from "@/lib/history-debug";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -147,6 +148,11 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
       if (!username) return;
       if (!confirm("Удалить эту запись из истории?")) return;
       const serverGenId = entry.serverGenId;
+      debugHistory("output.delete.click", {
+        localId: entry.id,
+        serverGenId,
+        createdAt: entry.createdAt,
+      });
 
       // Optimistic UI — hide across all surfaces BEFORE awaiting the
       // DELETE round-trip. Three synchronous signals:
@@ -166,11 +172,16 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
           { method: "DELETE" }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        debugHistory("output.delete.server.ok", { serverGenId });
         toast.success("Удалено");
       } catch (e) {
         // UI already hid the entry. On server failure we surface a toast
         // rather than resurrecting — reload will re-fetch authoritative
         // state if the user needs to see the row reappear.
+        debugHistory("output.delete.server.error", {
+          serverGenId,
+          message: e instanceof Error ? e.message : String(e),
+        });
         toast.error(e instanceof Error ? e.message : "Delete failed");
       }
     },

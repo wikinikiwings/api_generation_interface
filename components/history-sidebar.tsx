@@ -19,6 +19,7 @@ import { isPending, removePending, type PendingGeneration } from "@/lib/pending-
 import { usePromptStore } from "@/stores/prompt-store";
 import { useHistoryStore } from "@/stores/history-store";
 import { markGenerationDeleted } from "@/lib/history-deletions";
+import { debugHistory } from "@/lib/history-debug";
 import type { HistoryEntry } from "@/types/wavespeed";
 import { BlurUpImage } from "@/components/blur-up-image";
 
@@ -165,6 +166,11 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
   async function handleDelete(gen: ServerGeneration) {
     if (!username) return;
     if (!confirm("Удалить эту запись из истории?")) return;
+    debugHistory("sidebar.delete.click", {
+      genId: gen.id,
+      uuid: isPending(gen) ? gen.uuid : undefined,
+      pending: isPending(gen),
+    });
 
     // Pending (not-yet-confirmed) entry: drop it from the client-side
     // singleton. Blob URLs revoked. No server call.
@@ -190,11 +196,16 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      debugHistory("sidebar.delete.server.ok", { genId: gen.id });
       toast.success("Удалено");
       void refetch();
     } catch (e) {
       // UI already hid the entry. Surface the error via toast rather
       // than resurrecting — a reload fetches the authoritative state.
+      debugHistory("sidebar.delete.server.error", {
+        genId: gen.id,
+        message: e instanceof Error ? e.message : String(e),
+      });
       toast.error(e instanceof Error ? e.message : "Delete failed");
     }
   }

@@ -4,6 +4,7 @@ import * as React from "react";
 import { broadcastHistoryRefresh } from "@/hooks/use-history";
 import { useHistoryStore } from "@/stores/history-store";
 import { markGenerationDeleted } from "@/lib/history-deletions";
+import { debugHistory } from "@/lib/history-debug";
 
 /**
  * Open an EventSource to /api/history/stream for the given username
@@ -31,7 +32,10 @@ export function useGenerationEvents(username: string | null): void {
     // `generation.created` triggers a full refetch via the local refresh
     // bus. The event payload is intentionally unused — the fetch is cheap
     // and idempotent.
-    es.addEventListener("generation.created", refresh);
+    es.addEventListener("generation.created", (ev) => {
+      debugHistory("sse.generation.created", (ev as MessageEvent).data);
+      refresh();
+    });
 
     // `generation.deleted` carries `{ id: number }`. Drop any Zustand
     // entries that reference this server row so the Output panel
@@ -47,6 +51,7 @@ export function useGenerationEvents(username: string | null): void {
       } catch {
         // Malformed payload — fall through to refresh-only.
       }
+      debugHistory("sse.generation.deleted", { id });
       if (id !== null) {
         // Register in the cross-surface deleted-ids set BEFORE the
         // broadcastHistoryRefresh below. Otherwise the refetch that

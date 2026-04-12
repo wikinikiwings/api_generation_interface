@@ -17,6 +17,7 @@
 "use client";
 
 import { create } from "zustand";
+import { debugHistory } from "@/lib/history-debug";
 
 interface DeletionsState {
   ids: ReadonlySet<number>;
@@ -29,10 +30,14 @@ const useDeletionsStore = create<DeletionsState>(() => ({
 /** Mark a server generation id as deleted. Idempotent. */
 export function markGenerationDeleted(id: number): void {
   const current = useDeletionsStore.getState().ids;
-  if (current.has(id)) return;
+  if (current.has(id)) {
+    debugHistory("markDeleted.skip", { id, reason: "already-present" });
+    return;
+  }
   const next = new Set(current);
   next.add(id);
   useDeletionsStore.setState({ ids: next });
+  debugHistory("markDeleted", { id, size: next.size });
 }
 
 /** Sync snapshot — for reading outside a React render context. */
