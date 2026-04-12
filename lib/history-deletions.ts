@@ -16,32 +16,16 @@
 
 "use client";
 
-import { create, type UseBoundStore, type StoreApi } from "zustand";
+import { create } from "zustand";
 import { debugHistory } from "@/lib/history-debug";
 
 interface DeletionsState {
   ids: ReadonlySet<number>;
 }
 
-/**
- * HMR resilience: Next.js dev rebuilds this module on edit, which in a
- * naive `const useDeletionsStore = create(...)` pattern drops every
- * previously-marked deletion. The user then sees already-hidden rows
- * re-surface via refetch until they re-delete. Cache the store on
- * `globalThis` so the same instance survives module reloads.
- *
- * Only matters in dev. In prod there's no HMR; the global cache is a
- * no-op since the module is only evaluated once.
- */
-type DeletionsStore = UseBoundStore<StoreApi<DeletionsState>>;
-const globalKey = "__wavespeed_historyDeletionsStore" as const;
-type Globals = { [globalKey]?: DeletionsStore };
-const globals = globalThis as Globals;
-const useDeletionsStore: DeletionsStore =
-  globals[globalKey] ??
-  (globals[globalKey] = create<DeletionsState>(() => ({
-    ids: new Set<number>(),
-  })));
+const useDeletionsStore = create<DeletionsState>(() => ({
+  ids: new Set<number>(),
+}));
 
 /** Mark a server generation id as deleted. Idempotent. */
 export function markGenerationDeleted(id: number): void {
