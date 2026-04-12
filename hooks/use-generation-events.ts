@@ -3,6 +3,7 @@
 import * as React from "react";
 import { broadcastHistoryRefresh } from "@/hooks/use-history";
 import { useHistoryStore } from "@/stores/history-store";
+import { markGenerationDeleted } from "@/lib/history-deletions";
 
 /**
  * Open an EventSource to /api/history/stream for the given username
@@ -47,6 +48,12 @@ export function useGenerationEvents(username: string | null): void {
         // Malformed payload — fall through to refresh-only.
       }
       if (id !== null) {
+        // Register in the cross-surface deleted-ids set BEFORE the
+        // broadcastHistoryRefresh below. Otherwise the refetch that
+        // fires right after could race a concurrent generation's
+        // confirmPending → triggerHistoryRefresh → refetch sequence
+        // and briefly re-surface the just-deleted row via serverToday.
+        markGenerationDeleted(id);
         const store = useHistoryStore.getState();
         const toRemove = store.entries
           .filter((e) => e.serverGenId === id)

@@ -4,40 +4,40 @@
  * the matching row in another surface (e.g. History sidebar) instantly,
  * without waiting for the server refetch + re-render round-trip.
  *
- * The registry is additive — IDs stay in the set forever within a
- * session. Safe because server IDs are monotonically increasing and
- * never reused. On full reload the set resets, which is also fine: the
- * deleted row is gone from the server too, so refetch won't surface it.
+ * Backed by Zustand — the app's existing subscription primitive — so
+ * the re-render story is identical to every other store in the codebase.
+ *
+ * The registry is additive: IDs stay in the set for the lifetime of the
+ * session and never get evicted. Safe because server IDs are
+ * monotonically increasing and never reused. On full reload the store
+ * resets, which is also fine — the deleted row is gone from the server
+ * too, so a refetch won't surface it.
  */
 
-import * as React from "react";
+"use client";
 
-let deletedIds: ReadonlySet<number> = new Set<number>();
-const listeners = new Set<() => void>();
+import { create } from "zustand";
 
-function notify(): void {
-  for (const l of listeners) l();
+interface DeletionsState {
+  ids: ReadonlySet<number>;
 }
+
+const useDeletionsStore = create<DeletionsState>(() => ({
+  ids: new Set<number>(),
+}));
 
 /** Mark a server generation id as deleted. Idempotent. */
 export function markGenerationDeleted(id: number): void {
-  if (deletedIds.has(id)) return;
-  const next = new Set(deletedIds);
+  const current = useDeletionsStore.getState().ids;
+  if (current.has(id)) return;
+  const next = new Set(current);
   next.add(id);
-  deletedIds = next;
-  notify();
+  useDeletionsStore.setState({ ids: next });
 }
 
-/** Sync snapshot. Used by the React hook + ad-hoc filtering. */
+/** Sync snapshot — for reading outside a React render context. */
 export function getDeletedIds(): ReadonlySet<number> {
-  return deletedIds;
-}
-
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => {
-    listeners.delete(cb);
-  };
+  return useDeletionsStore.getState().ids;
 }
 
 /**
@@ -45,5 +45,5 @@ function subscribe(cb: () => void): () => void {
  * Re-renders the caller whenever the set grows.
  */
 export function useDeletedIds(): ReadonlySet<number> {
-  return React.useSyncExternalStore(subscribe, getDeletedIds, getDeletedIds);
+  return useDeletionsStore((s) => s.ids);
 }
