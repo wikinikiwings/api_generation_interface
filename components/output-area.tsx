@@ -10,9 +10,13 @@ import { cancelGeneration } from "@/components/generate-form";
 import { cn, copyToClipboard, startOfToday } from "@/lib/utils";
 import type { HistoryEntry } from "@/types/wavespeed";
 import { useUser } from "@/app/providers/user-provider";
-import { useHistory, type ServerGeneration } from "@/hooks/use-history";
+import { useHistory, extractUuid, type ServerGeneration } from "@/hooks/use-history";
 import { useGenerationEvents } from "@/hooks/use-generation-events";
 import { parsePromptData, serverGenToHistoryEntry } from "@/lib/server-gen-adapter";
+import {
+  subscribe as subscribePending,
+  getAll as getAllPending,
+} from "@/lib/pending-history";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -49,6 +53,17 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
   // cross-device sync. No-op when username is null.
   useGenerationEvents(username);
 
+  // Pending uploads on THIS device. Used below to suppress the race
+  // window where the SSE `generation.created` event arrives before
+  // the POST response has set `serverGenId` on the local Zustand
+  // entry — without this, the same generation briefly renders twice
+  // (local blob-URL card + server mid-URL card).
+  const pending = React.useSyncExternalStore(
+    subscribePending,
+    getAllPending,
+    getAllPending
+  );
+
   // Show today's entries (newest first), capped at the last 10. The cap
   // keeps the Output strip short and predictable even after a long
   // generation session, while still respecting the "only today" boundary
@@ -62,6 +77,9 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
     const localServerGenIds = new Set(
       local.map((e) => e.serverGenId).filter((x): x is number => typeof x === "number")
     );
+    // Uuids of uploads still in flight from THIS device. Covers the
+    // race window before `serverGenId` lands on the Zustand entry.
+    const pendingUuids = new Set(pending.map((p) => p.uuid.toLowerCase()));
 
     // Server entries that are NOT represented by a local Zustand row.
     // These are cross-device completions (or rows from a reload where
@@ -73,6 +91,8 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
         o.content_type.startsWith("image/")
       );
       if (!firstImage) continue;
+      const genUuid = extractUuid(firstImage.filepath);
+      if (genUuid && pendingUuids.has(genUuid)) continue;
       const data = parsePromptData(gen.prompt_data);
       const base = firstImage.filepath.replace(/\.[^.]+$/, "");
       const thumbUrl = `/api/history/image/${encodeURIComponent(`thumb_${base}.jpg`)}`;
@@ -98,7 +118,7 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
       (a, b) => b.createdAt - a.createdAt
     );
     return merged.slice(0, 10);
-  }, [entries, todayStart, serverToday]);
+  }, [entries, todayStart, serverToday, pending]);
 
   const hasAny = todayEntries.length > 0;
 

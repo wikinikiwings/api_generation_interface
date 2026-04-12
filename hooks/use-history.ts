@@ -89,7 +89,7 @@ function buildUrl(p: UseHistoryParams, offset: number): string {
  * as `<uuid>.<ext>` for originals. Returns null if the shape is unexpected
  * (legacy rows with non-uuid filenames). Used to dedupe pending vs server.
  */
-function extractUuid(filepath: string): string | null {
+export function extractUuid(filepath: string): string | null {
   const m = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\./i.exec(filepath);
   return m ? m[1].toLowerCase() : null;
 }
