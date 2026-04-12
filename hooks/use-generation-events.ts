@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { broadcastHistoryRefresh } from "@/hooks/use-history";
+import { useHistoryStore } from "@/stores/history-store";
 
 /**
  * Open an EventSource to /api/history/stream for the given username
@@ -30,7 +31,30 @@ export function useGenerationEvents(username: string | null): void {
     // listeners refetch. The event payload is intentionally unused
     // here: we rely on the fetch being cheap and idempotent.
     es.addEventListener("generation.created", refresh);
-    es.addEventListener("generation.deleted", refresh);
+
+    // `generation.deleted` carries `{ id: number }`. Drop any Zustand
+    // entries that reference this server row so the Output panel
+    // (which merges Zustand + serverToday) stops showing them. This is
+    // the single source of truth for cross-tab / cross-device delete
+    // cleanup — the UI trash handlers in Output and History intentionally
+    // do NOT mutate Zustand themselves.
+    es.addEventListener("generation.deleted", (ev) => {
+      let id: number | null = null;
+      try {
+        const parsed = JSON.parse((ev as MessageEvent).data) as { id?: unknown };
+        if (typeof parsed.id === "number") id = parsed.id;
+      } catch {
+        // Malformed payload — fall through to refresh-only.
+      }
+      if (id !== null) {
+        const store = useHistoryStore.getState();
+        const toRemove = store.entries
+          .filter((e) => e.serverGenId === id)
+          .map((e) => e.id);
+        for (const localId of toRemove) store.remove(localId);
+      }
+      broadcastHistoryRefresh();
+    });
 
     // Refetch on (re)connect so any missed events are reconciled.
     es.addEventListener("open", refresh);
