@@ -23,6 +23,8 @@ const timelines = new Map<string, Timeline>();
 
 function enabled(): boolean {
   if (typeof window === "undefined") return false;
+  // Always-on in dev. In production, require explicit opt-in via localStorage.
+  if (process.env.NODE_ENV !== "production") return true;
   try {
     return window.localStorage.getItem("HIST_DIAG") === "1";
   } catch {
@@ -33,8 +35,12 @@ function enabled(): boolean {
 export function mark(uuid: string, stage: Stage): void {
   if (!enabled()) return;
   const existing = timelines.get(uuid) ?? {};
+  const base = existing["gen-complete"];
   existing[stage] = performance.now();
   timelines.set(uuid, existing);
+  const rel =
+    base !== undefined ? ` (+${(existing[stage]! - base).toFixed(0)}ms)` : "";
+  console.debug(`[hist ${uuid.slice(0, 8)}] ${stage}${rel}`);
   if (stage === "card-painted") {
     report(uuid);
     // Keep the timeline around briefly so late marks from the pending→
