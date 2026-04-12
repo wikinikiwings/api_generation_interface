@@ -75,3 +75,114 @@
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
 }
+
+/* =====================================================================
+ * Pretty image loading — <BlurUpImage /> (components/blur-up-image.tsx)
+ *
+ * The curtain reveal is driven by an animated CSS variable `--reveal`
+ * (percentage) that moves from -25% → 125% while the mask-image's
+ * feathered edge sweeps top-to-bottom. `@property` is what makes the
+ * percentage interpolate smoothly rather than jumping.
+ *
+ * Feather width = 22% of the frame height, hard-coded into the
+ * mask-image gradient stops below.
+ * ===================================================================== */
+@property --reveal {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: -25%;
+}
+
+@keyframes blur-up-breathe {
+  0%, 100% { filter: blur(32px) saturate(1.2) brightness(0.95); }
+  50%      { filter: blur(30px) saturate(1.4) brightness(1.05); }
+}
+
+@keyframes blur-up-curtain {
+  from { --reveal: -25%; }
+  to   { --reveal: 125%; }
+}
+
+.blur-up-root {
+  position: relative;
+  overflow: hidden;
+}
+
+/* "natural" fit: the root collapses to the sharp layer's intrinsic size
+ * so callers (e.g. ImageDialog) who don't give the wrapper an explicit
+ * width/height still get a sensibly sized image. */
+.blur-up-root[data-fit="natural"] {
+  display: inline-block;
+}
+
+.blur-up-root[data-fit="natural"] .blur-up-sharp {
+  position: relative;
+  inset: auto;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.blur-up-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: blur(32px) saturate(1.2) brightness(0.95);
+  transform: scale(1.15);
+  animation: blur-up-breathe 2.5s ease-in-out infinite;
+  transition: opacity 300ms linear;
+  pointer-events: none;
+}
+
+.blur-up-sharp {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(var(--reveal, -25%)),
+    transparent calc(var(--reveal, -25%) + 22%),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(var(--reveal, -25%)),
+    transparent calc(var(--reveal, -25%) + 22%),
+    transparent 100%
+  );
+}
+
+.blur-up-sharp[data-reveal-state="playing"] {
+  animation: blur-up-curtain var(--reveal-ms, 700ms)
+    cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.blur-up-sharp[data-reveal-state="done"] {
+  --reveal: 125%;
+  animation: none;
+}
+
+.blur-up-root[data-reveal-state="done"] .blur-up-backdrop {
+  opacity: 0;
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blur-up-backdrop {
+    animation: none;
+    transition: opacity 150ms linear;
+  }
+  .blur-up-sharp,
+  .blur-up-sharp[data-reveal-state="playing"],
+  .blur-up-sharp[data-reveal-state="done"] {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+  }
+}
