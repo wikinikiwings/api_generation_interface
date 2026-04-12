@@ -87,12 +87,19 @@ async function readWithMidFallback(
     const lower = requestedFilename.toLowerCase();
     const altName =
       lower.endsWith(".jpg")
-        ? requestedFilename.slice(0, -4) + ".png"
+        ? lower.slice(0, -4) + ".png"
         : lower.endsWith(".png")
-          ? requestedFilename.slice(0, -4) + ".jpg"
+          ? lower.slice(0, -4) + ".jpg"
           : null;
     if (!altName) throw err;
     const altPath = path.join(dir, altName);
+    // Defense-in-depth: even though altName is derived from an already-
+    // validated filename by a fixed 4-char extension swap, re-run the
+    // "resolved path must live inside dir" check here so the helper is
+    // safe to reuse without relying on caller validation.
+    if (!path.resolve(altPath).startsWith(path.resolve(dir))) {
+      throw err;
+    }
     const bytes = await fs.readFile(altPath);
     return { bytes, filename: altName };
   }
