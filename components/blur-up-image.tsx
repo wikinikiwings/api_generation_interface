@@ -93,6 +93,9 @@ export const BlurUpImage = React.forwardRef<HTMLImageElement, BlurUpImageProps>(
 
     const reducedMotion = useReducedMotion();
 
+    const revealMsRef = React.useRef(revealMs);
+    revealMsRef.current = revealMs;
+
     // Trigger reveal exactly once per mount when sharp first loads.
     React.useEffect(() => {
       if (!sharpLoaded) return;
@@ -108,9 +111,12 @@ export const BlurUpImage = React.forwardRef<HTMLImageElement, BlurUpImageProps>(
       setRevealState("playing");
       const t = window.setTimeout(() => {
         setRevealState("done");
-      }, revealMs);
+      }, revealMsRef.current);
       return () => window.clearTimeout(t);
-    }, [sharpLoaded, reducedMotion, revealMs]);
+      // revealMs intentionally omitted from deps: it's read through
+      // a ref so a prop change mid-reveal doesn't cancel the timer
+      // and strand the state machine at "playing".
+    }, [sharpLoaded, reducedMotion]);
 
     // If the backdrop URL 404s, fall back to using sharpSrc as backdrop.
     const effectiveBackdropSrc = backdropFailed ? renderedSharpSrc : renderedBackdropSrc;
@@ -188,10 +194,15 @@ export const BlurUpImage = React.forwardRef<HTMLImageElement, BlurUpImageProps>(
 );
 
 function useReducedMotion(): boolean {
-  const [reduced, setReduced] = React.useState(false);
+  const [reduced, setReduced] = React.useState<boolean>(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
   React.useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // Also re-read here in case the value changed between the lazy
+    // initialiser and effect (hot reload, SSR hand-off).
     setReduced(mq.matches);
     const onChange = () => setReduced(mq.matches);
     mq.addEventListener("change", onChange);
