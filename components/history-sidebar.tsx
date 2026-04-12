@@ -18,6 +18,7 @@ import { useHistorySiblings } from "@/hooks/use-history-siblings";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { usePromptStore } from "@/stores/prompt-store";
 import type { HistoryEntry } from "@/types/wavespeed";
+import { BlurUpImage } from "@/components/blur-up-image";
 
 export interface HistorySidebarProps {
   open: boolean;
@@ -406,13 +407,12 @@ function ServerEntryCard({
   // Inner thumbnail JSX — same element in both the navigable and the
   // fallback branches below, hoisted here to avoid duplication.
   const thumbJsx = cardSrc && fullSrc && midSrc ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={cardSrc}
+    <BlurUpImage
+      sharpSrc={cardSrc}
+      // No explicit backdrop: the card already renders thumb-level detail,
+      // and BlurUpImage's fallback (blur(32px) on sharpSrc) gives us the
+      // color pulse without a second HTTP request.
       alt={data.prompt || "generation"}
-      width={140}
-      height={140}
-      loading="lazy"
       draggable
       onDragStart={(e) => {
         const payload = {
@@ -426,7 +426,9 @@ function ServerEntryCard({
         );
         e.dataTransfer.effectAllowed = "copy";
       }}
-      className="h-[140px] w-[140px] cursor-zoom-in rounded-md border border-border object-cover transition-all hover:scale-[1.03] hover:shadow-md"
+      fit="cover"
+      revealMs={500}
+      className="h-[140px] w-[140px] cursor-zoom-in rounded-md border border-border transition-all hover:scale-[1.03] hover:shadow-md"
       onError={() => {
         if (!triedFullRef.current && fullSrc && cardSrc !== fullSrc) {
           triedFullRef.current = true;
