@@ -43,9 +43,9 @@ export async function GET(
   }
 
   try {
-    const buf = await fs.readFile(resolved);
-    const contentType = mime.lookup(filename) || "application/octet-stream";
-    return new NextResponse(new Uint8Array(buf), {
+    const result = await readWithMidFallback(resolved, filename, dir);
+    const contentType = mime.lookup(result.filename) || "application/octet-stream";
+    return new NextResponse(new Uint8Array(result.bytes), {
       status: 200,
       headers: {
         "Content-Type": contentType,
@@ -60,5 +60,40 @@ export async function GET(
     }
     console.error("[history image] read failed:", err);
     return NextResponse.json({ error: "Read failed" }, { status: 500 });
+  }
+}
+
+/**
+ * Read the requested file, or — for `mid_*` variants only — fall back
+ * to the sibling extension. Legacy entries wrote `mid_<uuid>.png`; new
+ * entries write `mid_<uuid>.jpg`. Clients always request `.jpg` after
+ * the thumbnail-first change, so we transparently serve the legacy
+ * `.png` when the `.jpg` is missing.
+ *
+ * Returns the bytes AND the effective filename (so Content-Type reflects
+ * what was actually served, not what was requested).
+ */
+async function readWithMidFallback(
+  primaryPath: string,
+  requestedFilename: string,
+  dir: string
+): Promise<{ bytes: Buffer; filename: string }> {
+  try {
+    const bytes = await fs.readFile(primaryPath);
+    return { bytes, filename: requestedFilename };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    if (!requestedFilename.startsWith("mid_")) throw err;
+    const lower = requestedFilename.toLowerCase();
+    const altName =
+      lower.endsWith(".jpg")
+        ? requestedFilename.slice(0, -4) + ".png"
+        : lower.endsWith(".png")
+          ? requestedFilename.slice(0, -4) + ".jpg"
+          : null;
+    if (!altName) throw err;
+    const altPath = path.join(dir, altName);
+    const bytes = await fs.readFile(altPath);
+    return { bytes, filename: altName };
   }
 }
