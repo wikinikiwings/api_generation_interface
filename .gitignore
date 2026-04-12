@@ -50,3 +50,8 @@ next-env.d.ts
 # runtime-generated images (kept via .gitkeep)
 /public/generated/*
 !/public/generated/.gitkeep
+
+# superpowers brainstorm session mockups (ephemeral HTML served by the
+# visual companion; not source code)
+/.superpowers/
+/.claude/
