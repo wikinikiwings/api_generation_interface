@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ImageDialog } from "@/components/image-dialog";
 import { useHistoryStore } from "@/stores/history-store";
+import { usePromptStore } from "@/stores/prompt-store";
 import { cancelGeneration } from "@/components/generate-form";
 import { cn, copyToClipboard, startOfToday } from "@/lib/utils";
 import type { HistoryEntry } from "@/types/wavespeed";
@@ -374,7 +375,10 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
               e.stopPropagation();
               e.preventDefault();
               const ok = await copyToClipboard(entry.prompt);
-              if (ok) toast.success("Промпт скопирован", { duration: 1500 });
+              if (ok) {
+                usePromptStore.getState().setPrompt(entry.prompt);
+                toast.success("Промпт применён и скопирован", { duration: 1500 });
+              }
             }}
             title="Скопировать промпт"
             aria-label="Copy prompt"
