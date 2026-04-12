@@ -62,4 +62,23 @@ export interface HistoryEntry {
    * asynchronously after the generation itself is already in the store.
    */
   serverGenId?: number;
+  /**
+   * True once the server has persisted this generation to disk + DB.
+   * Optimistic entries live in-memory only (blob URLs aren't portable
+   * across reloads) and are filtered out of the persisted store.
+   * Undefined on legacy entries — treat as "confirmed" for back-compat.
+   */
+  confirmed?: boolean;
+  /**
+   * Human-readable error if the POST /api/history call failed.
+   * Presence signals "show retry UI". Cleared on successful retry.
+   */
+  uploadError?: string | null;
+  /**
+   * Client-generated blob: URLs that must be revoked when the entry
+   * is removed or when the entry transitions to "confirmed" (2s after,
+   * via requestIdleCallback). Tracked here so the store's own `remove`
+   * / `clear` can free them without the owner having to call revoke.
+   */
+  localBlobUrls?: string[];
 }

@@ -4,6 +4,20 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { HistoryEntry, TaskStatus } from "@/types/wavespeed";
 
+function revokeLocalBlobUrls(entries: HistoryEntry[]): void {
+  if (typeof window === "undefined") return;
+  for (const e of entries) {
+    if (!e.localBlobUrls) continue;
+    for (const u of e.localBlobUrls) {
+      try {
+        URL.revokeObjectURL(u);
+      } catch {
+        // Already revoked or never registered — ignore.
+      }
+    }
+  }
+}
+
 interface HistoryState {
   entries: HistoryEntry[];
   add: (entry: HistoryEntry) => void;
@@ -46,16 +60,30 @@ export const useHistoryStore = create<HistoryState>()(
         })),
 
       remove: (id) =>
-        set((state) => ({
-          entries: state.entries.filter((e) => e.id !== id),
-        })),
+        set((state) => {
+          const victim = state.entries.find((e) => e.id === id);
+          if (victim) revokeLocalBlobUrls([victim]);
+          return {
+            entries: state.entries.filter((e) => e.id !== id),
+          };
+        }),
 
-      clear: () => set({ entries: [] }),
+      clear: () =>
+        set((state) => {
+          revokeLocalBlobUrls(state.entries);
+          return { entries: [] };
+        }),
     }),
     {
       name: "wavespeed-history",
       storage: createJSONStorage(() => localStorage),
       version: 3,
+      partialize: (state) => ({
+        // Drop optimistic-only entries: their blob URLs won't survive
+        // reload. Entries without `confirmed` (legacy v1–v3 rows) are
+        // treated as confirmed for back-compat.
+        entries: state.entries.filter((e) => e.confirmed !== false),
+      }),
       // v1 entries didn't have a `provider` field. Backfill it as "wavespeed"
       // since WaveSpeed was the only provider in v1.
       // v2 -> v3: added optional `serverGenId`. No backfill needed — existing
