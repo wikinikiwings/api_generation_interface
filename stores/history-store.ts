@@ -4,6 +4,14 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { HistoryEntry, TaskStatus } from "@/types/wavespeed";
 
+/**
+ * Idempotent: safe to call for the same URL multiple times. The store
+ * invokes this on remove/clear; pending-history.ts (Task 5) also
+ * revokes its own blob URLs on confirmPending. Because ownership of a
+ * blob URL can be shared between the two registries during the Output
+ * panel → pending-sidebar transition, both paths may fire for the same
+ * URL. The try/catch is intentional — do not remove.
+ */
 function revokeLocalBlobUrls(entries: HistoryEntry[]): void {
   if (typeof window === "undefined") return;
   for (const e of entries) {
@@ -36,7 +44,7 @@ const MAX_ENTRIES = 100;
 
 export const useHistoryStore = create<HistoryState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       entries: [],
 
       add: (entry) =>
@@ -59,20 +67,19 @@ export const useHistoryStore = create<HistoryState>()(
           ),
         })),
 
-      remove: (id) =>
-        set((state) => {
-          const victim = state.entries.find((e) => e.id === id);
-          if (victim) revokeLocalBlobUrls([victim]);
-          return {
-            entries: state.entries.filter((e) => e.id !== id),
-          };
-        }),
+      remove: (id) => {
+        const victim = get().entries.find((e) => e.id === id);
+        set((state) => ({
+          entries: state.entries.filter((e) => e.id !== id),
+        }));
+        if (victim) revokeLocalBlobUrls([victim]);
+      },
 
-      clear: () =>
-        set((state) => {
-          revokeLocalBlobUrls(state.entries);
-          return { entries: [] };
-        }),
+      clear: () => {
+        const victims = get().entries;
+        set({ entries: [] });
+        revokeLocalBlobUrls(victims);
+      },
     }),
     {
       name: "wavespeed-history",
@@ -84,6 +91,34 @@ export const useHistoryStore = create<HistoryState>()(
         // treated as confirmed for back-compat.
         entries: state.entries.filter((e) => e.confirmed !== false),
       }),
+      merge: (persistedState, currentState) => {
+        // Cross-tab rehydrate path: preserve any in-flight optimistic
+        // entries (confirmed: false) that only exist in this tab's
+        // memory and were deliberately excluded from localStorage by
+        // partialize. Without this, tab A writing localStorage would
+        // wipe tab B's in-progress uploads.
+        const persisted = persistedState as Partial<HistoryState> | undefined;
+        const persistedEntries = persisted?.entries ?? [];
+        const unconfirmed = currentState.entries.filter(
+          (e) => e.confirmed === false
+        );
+        if (unconfirmed.length === 0) {
+          return {
+            ...currentState,
+            ...(persisted ?? {}),
+            entries: persistedEntries,
+          };
+        }
+        const unconfirmedIds = new Set(unconfirmed.map((e) => e.id));
+        return {
+          ...currentState,
+          ...(persisted ?? {}),
+          entries: [
+            ...unconfirmed,
+            ...persistedEntries.filter((e) => !unconfirmedIds.has(e.id)),
+          ],
+        };
+      },
       // v1 entries didn't have a `provider` field. Backfill it as "wavespeed"
       // since WaveSpeed was the only provider in v1.
       // v2 -> v3: added optional `serverGenId`. No backfill needed — existing
