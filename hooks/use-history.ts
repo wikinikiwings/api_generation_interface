@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import * as pendingHistory from "@/lib/pending-history";
+import { useDeletedIds } from "@/lib/history-deletions";
 
 export interface ServerOutput {
   id: number;
@@ -174,17 +175,24 @@ export function useHistory(params: UseHistoryParams) {
     return () => window.removeEventListener(HISTORY_REFRESH_EVENT, handler);
   }, [fetchFirstPage]);
 
+  // Cross-surface deletions: a row the user just deleted elsewhere in
+  // the app can briefly re-surface through a concurrent refetch before
+  // the server's DELETE commits. Filtering at the source means every
+  // consumer of `items` gets a clean list — individual components
+  // don't need to remember to apply their own filter.
+  const crossDeletedIds = useDeletedIds();
   const mergedItems = React.useMemo(() => {
-    if (pending.length === 0) return items;
+    const live = items.filter((g) => !crossDeletedIds.has(g.id));
+    if (pending.length === 0) return live;
     // Once the server refresh brings in the uuid, hide the pending
     // entry and show the server row instead. The pending entry stays
     // in the pending-history store for a grace period so its blob
     // URLs remain valid for any <img> mid-swap to server URLs.
     const filteredPending = pending.filter(
-      (p) => !items.some((g) => serverHasUuid(g, p.uuid))
+      (p) => !live.some((g) => serverHasUuid(g, p.uuid))
     );
-    return [...filteredPending, ...items];
-  }, [pending, items]);
+    return [...filteredPending, ...live];
+  }, [pending, items, crossDeletedIds]);
 
   return {
     items: mergedItems,

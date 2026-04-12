@@ -18,7 +18,7 @@ import { useHistorySiblings } from "@/hooks/use-history-siblings";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { usePromptStore } from "@/stores/prompt-store";
 import { useHistoryStore } from "@/stores/history-store";
-import { markGenerationDeleted, useDeletedIds } from "@/lib/history-deletions";
+import { markGenerationDeleted } from "@/lib/history-deletions";
 import type { HistoryEntry } from "@/types/wavespeed";
 import { BlurUpImage } from "@/components/blur-up-image";
 
@@ -137,15 +137,14 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
     }
   }, [navHasMore, navLoading, navLoadMore]);
 
-  // Optimistic local removal after DELETE. Since useHistory owns items, we
-  // just refetch — the DELETE endpoint is fast enough.
+  // Optimistic local removal after DELETE. Since useHistory already
+  // filters out rows present in `useDeletedIds()` at the source, we
+  // only need to guard against the narrow in-flight window between
+  // setDeletingIds and useHistory picking up the deletion.
   const [deletingIds, setDeletingIds] = React.useState<Set<number>>(new Set());
-  // Cross-surface deletions (e.g. from Output strip) land here so the
-  // sidebar hides the row instantly — no waiting on refetch.
-  const crossDeletedIds = useDeletedIds();
   const visibleItems = React.useMemo(
-    () => items.filter((g) => !deletingIds.has(g.id) && !crossDeletedIds.has(g.id)),
-    [items, deletingIds, crossDeletedIds]
+    () => items.filter((g) => !deletingIds.has(g.id)),
+    [items, deletingIds]
   );
 
   // Warm browser cache for thumb + mid variants (see lib/image-cache.ts).

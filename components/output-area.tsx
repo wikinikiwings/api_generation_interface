@@ -20,7 +20,7 @@ import {
 } from "@/lib/pending-history";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
-import { markGenerationDeleted, useDeletedIds } from "@/lib/history-deletions";
+import { markGenerationDeleted } from "@/lib/history-deletions";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -74,13 +74,6 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
   // — nothing from yesterday ever leaks in.
   const todayStart = React.useMemo(() => startOfToday(), []);
 
-  // Cross-surface deletions: if a row was just deleted in this tab (by
-  // this or another surface like the History sidebar), a concurrent
-  // refetch can race the DB commit and temporarily re-surface it here
-  // via `serverToday`. Filtering through `crossDeletedIds` suppresses
-  // that flicker until the authoritative server state catches up.
-  const crossDeletedIds = useDeletedIds();
-
   const todayEntries = React.useMemo(() => {
     // Zustand entries for today (may include in-flight + optimistic).
     const local = entries.filter((e) => e.createdAt >= todayStart);
@@ -94,11 +87,12 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
 
     // Server entries that are NOT represented by a local Zustand row.
     // These are cross-device completions (or rows from a reload where
-    // the optimistic local entry was not persisted).
+    // the optimistic local entry was not persisted). `serverToday`
+    // already has cross-surface-deleted rows filtered out at the
+    // useHistory source — no need to re-filter here.
     const remote: HistoryEntry[] = [];
     for (const gen of serverToday as ServerGeneration[]) {
       if (localServerGenIds.has(gen.id)) continue;
-      if (crossDeletedIds.has(gen.id)) continue;
       const firstImage = gen.outputs.find((o) =>
         o.content_type.startsWith("image/")
       );
@@ -128,7 +122,7 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
       (a, b) => b.createdAt - a.createdAt
     );
     return merged.slice(0, 10);
-  }, [entries, todayStart, serverToday, pending, crossDeletedIds]);
+  }, [entries, todayStart, serverToday, pending]);
 
   // Trash handler for Output cards. Two categories:
   //   1) Local-only entry (no serverGenId — POST failed or legacy row):
