@@ -120,9 +120,12 @@
   inset: auto;
   width: auto;
   height: auto;
-  max-width: 100%;
-  max-height: 100%;
   display: block;
+  /* Intentionally no max-width/max-height here. The natural mode
+   * expects the caller to pass size caps directly on the sharp <img>
+   * via `sharpClassName` (e.g. Tailwind max-h-[82vh] max-w-[92vw]).
+   * A percentage max-* here would resolve against the inline-block
+   * root (circular) and counter the caller's concrete viewport caps. */
 }
 
 .blur-up-backdrop {

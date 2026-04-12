@@ -16,6 +16,13 @@ export interface BlurUpImageProps {
   alt: string;
   className?: string;
   /**
+   * Extra className for the sharp `<img>` directly — useful in
+   * `fit="natural"` mode where the sharp img drives the layout and
+   * the caller needs to impose max-width / max-height / object-fit
+   * directly on the bitmap layer.
+   */
+  sharpClassName?: string;
+  /**
    * Sizing mode:
    *   "contain" / "cover" — both layers absolutely positioned inside
    *     the caller's fixed-size wrapper (Output, Sidebar use these).
@@ -61,6 +68,7 @@ export const BlurUpImage = React.forwardRef<HTMLImageElement, BlurUpImageProps>(
       backdropSrc,
       alt,
       className,
+      sharpClassName,
       fit = "contain",
       revealMs = DEFAULT_REVEAL_MS,
       draggable,
@@ -167,7 +175,7 @@ export const BlurUpImage = React.forwardRef<HTMLImageElement, BlurUpImageProps>(
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           ref={ref}
-          className={cn("blur-up-sharp", imgFitClass)}
+          className={cn("blur-up-sharp", imgFitClass, sharpClassName)}
           src={renderedSharpSrc}
           alt={alt}
           draggable={draggable}

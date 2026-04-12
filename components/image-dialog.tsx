@@ -955,12 +955,12 @@ function ZoomableImage({
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
     >
-      {/* Zoom/pan transform now lives on this wrapper div so both the
-          sharp and backdrop layers transform together. The BlurUpImage
-          root is sized by the sharp image's intrinsic dimensions
-          (fit="natural"), capped by max-h/max-w on the wrapper. */}
+      {/* Zoom/pan transform lives on this wrapper so both the sharp and
+          backdrop layers transform together. The viewport cap (max-h/max-w)
+          sits on the sharp <img> itself via `sharpClassName` — that's the
+          only way for percentage max-* to resolve against a known size
+          when the BlurUpImage root is inline-block (fit="natural"). */}
       <div
-        className="max-h-[82vh] max-w-[92vw]"
         style={{
           transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
           transformOrigin: "center center",
@@ -979,6 +979,7 @@ function ZoomableImage({
             revealMs={400}
             draggable={false}
             onError={onLoadError}
+            sharpClassName="max-h-[82vh] max-w-[92vw] object-contain"
           />
         ) : null}
       </div>
