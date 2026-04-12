@@ -9,6 +9,7 @@ import { useUser } from "@/app/providers/user-provider";
 import { cn, copyToClipboard, formatFullDate } from "@/lib/utils";
 import { preloadImages } from "@/lib/image-cache";
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
+import type { PendingGeneration } from "@/lib/pending-history";
 import { useHistoryStore } from "@/stores/history-store";
 import type { HistoryEntry } from "@/types/wavespeed";
 
@@ -83,13 +84,18 @@ function serverGenToHistoryEntry(
 /** Build a URL for the local image-serving endpoint. */
 function imgUrl(filepath: string, variant?: "thumb" | "mid"): string {
   const base = filepath.replace(/\.[^.]+$/, "");
-  const filename =
-    variant === "thumb"
-      ? `thumb_${base}.jpg`
-      : variant === "mid"
-        ? `mid_${base}.png`
-        : filepath;
-  return `/api/history/image/${encodeURIComponent(filename)}`;
+  if (variant === "thumb") {
+    return `/api/history/image/${encodeURIComponent(`thumb_${base}.jpg`)}`;
+  }
+  if (variant === "mid") {
+    // New entries (client-generated variants) use .jpg. Legacy entries
+    // (server sharp-generated) use .png. The resolver in
+    // app/api/history/image/[filename]/route.ts has a narrow .jpg<->.png
+    // fallback for mid_* lookups, so requesting .jpg for old entries
+    // transparently serves the legacy .png bytes.
+    return `/api/history/image/${encodeURIComponent(`mid_${base}.jpg`)}`;
+  }
+  return `/api/history/image/${encodeURIComponent(filepath)}`;
 }
 
 // Re-export for backwards compat (generate-form imports REFRESH_EVENT
@@ -159,6 +165,8 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
     if (visibleItems.length === 0) return;
     const urls: string[] = [];
     for (const g of visibleItems) {
+      // Blob URLs are already in memory — preloading does nothing useful.
+      if ((g as PendingGeneration).pending === true) continue;
       const img = g.outputs.find((o) => o.content_type.startsWith("image/"));
       if (!img) continue;
       urls.push(imgUrl(img.filepath, "thumb"));
@@ -170,6 +178,19 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
   async function handleDelete(gen: ServerGeneration) {
     if (!username) return;
     if (!confirm("Удалить эту запись из истории?")) return;
+
+    // Pending (not-yet-confirmed) entry: drop it from the client-side
+    // singleton. Blob URLs revoked. No server call.
+    const pending = (gen as PendingGeneration).pending === true
+      ? (gen as PendingGeneration)
+      : null;
+    if (pending) {
+      const { removePending } = await import("@/lib/pending-history");
+      removePending(pending.uuid);
+      toast.success("Удалено");
+      return;
+    }
+
     try {
       const res = await fetch(
         `/api/history?id=${gen.id}&username=${encodeURIComponent(username)}`,
@@ -354,9 +375,25 @@ function ServerEntryCard({
 }) {
   const data = React.useMemo(() => parsePromptData(gen.prompt_data), [gen.prompt_data]);
   const firstImage = gen.outputs.find((o) => o.content_type.startsWith("image/"));
-  const thumbSrc = firstImage ? imgUrl(firstImage.filepath, "thumb") : null;
-  const midSrc = firstImage ? imgUrl(firstImage.filepath, "mid") : null;
-  const fullSrc = firstImage ? imgUrl(firstImage.filepath) : null;
+  const isPending = (gen as PendingGeneration).pending === true;
+  const pendingEntry = isPending ? (gen as PendingGeneration) : null;
+  const uploadError = pendingEntry?.uploadError;
+
+  const thumbSrc = pendingEntry
+    ? pendingEntry.thumbBlobUrl
+    : firstImage
+      ? imgUrl(firstImage.filepath, "thumb")
+      : null;
+  const midSrc = pendingEntry
+    ? pendingEntry.midBlobUrl
+    : firstImage
+      ? imgUrl(firstImage.filepath, "mid")
+      : null;
+  const fullSrc = pendingEntry
+    ? pendingEntry.fullBlobUrl
+    : firstImage
+      ? imgUrl(firstImage.filepath)
+      : null;
 
   // Local state so we can fall back thumb → original if the pre-rendered
   // thumbnail is missing on disk (legacy rows, failed resize, etc.).
@@ -433,6 +470,20 @@ function ServerEntryCard({
           </div>
         )}
       </div>
+
+      {uploadError && pendingEntry?.retry && (
+        <div className="mb-2 flex items-center gap-2 rounded border border-destructive/40 bg-destructive/5 px-2 py-1 text-xs text-destructive">
+          <span title={uploadError}>Not saved</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-5 px-2 py-0 text-xs"
+            onClick={() => pendingEntry.retry?.()}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
 
       <div className="flex w-full items-center justify-between gap-2 text-xs text-muted-foreground">
         <div className="flex min-w-0 items-center gap-1.5">
