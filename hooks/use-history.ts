@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import * as pendingHistory from "@/lib/pending-history";
 
 export interface ServerOutput {
   id: number;
@@ -83,9 +84,30 @@ function buildUrl(p: UseHistoryParams, offset: number): string {
   return `/api/history?${sp.toString()}`;
 }
 
+/**
+ * Extract the uuid portion of a server-history filepath. Files are stored
+ * as `<uuid>.<ext>` for originals. Returns null if the shape is unexpected
+ * (legacy rows with non-uuid filenames). Used to dedupe pending vs server.
+ */
+function extractUuid(filepath: string): string | null {
+  const m = /^([0-9a-f-]{36})\./i.exec(filepath);
+  return m ? m[1].toLowerCase() : null;
+}
+
+function serverHasUuid(gen: ServerGeneration, uuid: string): boolean {
+  const target = uuid.toLowerCase();
+  return gen.outputs.some((o) => extractUuid(o.filepath) === target);
+}
+
 export function useHistory(params: UseHistoryParams) {
   const { username, startDate, endDate } = params;
   const [items, setItems] = React.useState<ServerGeneration[]>([]);
+  const [pending, setPending] = React.useState<pendingHistory.PendingGeneration[]>(
+    () => pendingHistory.getAll()
+  );
+  React.useEffect(() => {
+    return pendingHistory.subscribe(() => setPending(pendingHistory.getAll()));
+  }, []);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
@@ -150,8 +172,22 @@ export function useHistory(params: UseHistoryParams) {
     return () => window.removeEventListener(HISTORY_REFRESH_EVENT, handler);
   }, [fetchFirstPage]);
 
+  const mergedItems = React.useMemo(() => {
+    if (pending.length === 0) return items;
+    const filteredServer = items.filter(
+      (g) => !pending.some((p) => serverHasUuid(g, p.uuid))
+    );
+    // Also drop any pending that the server view already has (protects
+    // against a brief overlap window between server refresh and
+    // confirmPending firing).
+    const filteredPending = pending.filter(
+      (p) => !items.some((g) => serverHasUuid(g, p.uuid))
+    );
+    return [...filteredPending, ...filteredServer];
+  }, [pending, items]);
+
   return {
-    items,
+    items: mergedItems,
     hasMore,
     isLoading,
     isLoadingMore,
