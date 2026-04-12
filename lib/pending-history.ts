@@ -36,6 +36,12 @@ export interface PendingGeneration extends ServerGeneration {
    * generate-form.tsx calls this function.
    */
   retry?: () => void;
+  /**
+   * Abort the in-flight upload. Called by `removePending` so a
+   * user-initiated delete mid-upload stops the server from persisting
+   * the row. If the upload already finished, this is a no-op.
+   */
+  abort?: () => void;
 }
 
 /** Type-narrowing check used by sidebar render/preload/delete sites. */
@@ -116,6 +122,9 @@ export function confirmPending(uuid: string): void {
 export function removePending(uuid: string): void {
   const cur = map.get(uuid);
   if (!cur) return;
+  // Cancel any in-flight upload BEFORE we drop local state, so the
+  // fetch gets aborted instead of racing to completion on the server.
+  cur.abort?.();
   map.delete(uuid);
   snapshot = null;
   emit();

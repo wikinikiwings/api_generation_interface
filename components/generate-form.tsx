@@ -221,10 +221,17 @@ export function GenerateForm() {
         console.warn("[history] skip POST: no username");
         return;
       }
-      const uploadUuid =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : uuid();
+      // We require crypto.randomUUID here: the server validates
+      // uuid against the canonical RFC-4122 shape and the
+      // Math.random fallback in lib/utils#uuid wouldn't pass. Any
+      // browser that supports our canvas pipeline also has
+      // crypto.randomUUID.
+      if (typeof crypto === "undefined" || !("randomUUID" in crypto)) {
+        console.error("[history] crypto.randomUUID unavailable");
+        toast.error("Browser too old — cannot save to history");
+        return;
+      }
+      const uploadUuid = crypto.randomUUID();
       let variants: Awaited<ReturnType<typeof createImageVariants>>;
       try {
         variants = await createImageVariants(outputUrl);
@@ -258,6 +265,10 @@ export function GenerateForm() {
       const originalContentType =
         variants.full.type || `image/${outputFormat}`;
 
+      // Each upload has its own controller so `removePending` can cancel
+      // exactly this request without affecting other concurrent uploads.
+      const uploadAbort = new AbortController();
+
       // Push optimistic entry into the sidebar singleton BEFORE upload.
       // Shape mirrors ServerGeneration just enough for the card renderer;
       // `id: -1` is a sentinel that the card treats via `pending: true`.
@@ -273,6 +284,7 @@ export function GenerateForm() {
           originalContentType,
           thumb: variants.thumb,
           mid: variants.mid,
+          signal: uploadAbort.signal,
         });
 
       const retry = () => {
@@ -290,6 +302,7 @@ export function GenerateForm() {
             triggerHistoryRefresh();
           },
           (e: Error) => {
+            if (e instanceof DOMException && e.name === "AbortError") return;
             pendingHistory.markError(uploadUuid, e.message);
           }
         );
@@ -322,6 +335,7 @@ export function GenerateForm() {
           },
         ],
         retry,
+        abort: () => uploadAbort.abort(),
       });
 
       // Also link blob URLs into the zustand entry so the Output panel
@@ -348,6 +362,10 @@ export function GenerateForm() {
         });
         triggerHistoryRefresh();
       } catch (e) {
+        // AbortError from uploadAbort.abort() means the user deleted
+        // the pending entry; removePending already cleaned up. Nothing
+        // more to do.
+        if (e instanceof DOMException && e.name === "AbortError") return;
         const msg = e instanceof Error ? e.message : "Upload failed";
         pendingHistory.markError(uploadUuid, msg);
         // Zustand entry keeps the blob URLs so the Output panel stays
