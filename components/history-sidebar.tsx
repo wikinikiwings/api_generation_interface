@@ -11,8 +11,10 @@ import { preloadImages, useCachedImage } from "@/lib/image-cache";
 import {
   parsePromptData,
   serverGenToHistoryEntry,
+  stableGenerationId,
 } from "@/lib/server-gen-adapter";
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
+import { useHistorySiblings } from "@/hooks/use-history-siblings";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { useHistoryStore } from "@/stores/history-store";
 import { usePromptStore } from "@/stores/prompt-store";
@@ -107,6 +109,28 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
     endDate: dateRange.to,
   });
   const loading = isLoading;
+
+  // Sibling list for in-dialog prev/next nav. Shares the same filter
+  // window as the sidebar so what you see is what you can navigate.
+  // Note: useHistory is effectively called twice (once directly, once
+  // inside useHistorySiblings). Refetches coalesce via the reqIdRef
+  // guard in useHistory, so this is near-free.
+  const {
+    siblings: navSiblings,
+    loadMore: navLoadMore,
+    hasMore: navHasMore,
+    loading: navLoading,
+  } = useHistorySiblings({
+    username,
+    startDate: dateRange.from,
+    endDate: dateRange.to,
+  });
+
+  const handleNearEnd = React.useCallback(() => {
+    if (navHasMore && !navLoading) {
+      navLoadMore();
+    }
+  }, [navHasMore, navLoading, navLoadMore]);
 
   // Optimistic local removal after DELETE. Since useHistory owns items, we
   // just refetch — the DELETE endpoint is fast enough.
@@ -298,6 +322,8 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
                 key={g.id}
                 gen={g}
                 onDelete={() => handleDelete(g)}
+                siblings={navSiblings}
+                onNearEnd={handleNearEnd}
               />
             ))}
             {hasMore && (
@@ -321,9 +347,13 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
 function ServerEntryCard({
   gen,
   onDelete,
+  siblings,
+  onNearEnd,
 }: {
   gen: ServerGeneration;
   onDelete: () => void;
+  siblings: HistoryEntry[];
+  onNearEnd: (remainingAhead: number) => void;
 }) {
   const data = React.useMemo(() => parsePromptData(gen.prompt_data), [gen.prompt_data]);
   const firstImage = gen.outputs.find((o) => o.content_type.startsWith("image/"));
@@ -368,6 +398,12 @@ function ServerEntryCard({
     return Number.isNaN(t) ? Date.now() : t;
   }, [gen.created_at]);
 
+  const stableId = React.useMemo(() => stableGenerationId(gen), [gen]);
+  const initialSiblingIndex = React.useMemo(
+    () => siblings.findIndex((s) => s.id === stableId),
+    [siblings, stableId]
+  );
+
   async function handleCopy() {
     if (!data.prompt) return;
     const ok = await copyToClipboard(data.prompt);
@@ -377,47 +413,64 @@ function ServerEntryCard({
     }
   }
 
+  // Inner thumbnail JSX — same element in both the navigable and the
+  // fallback branches below, hoisted here to avoid duplication.
+  const thumbJsx = cardSrc && fullSrc && midSrc ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={cardSrc}
+      alt={data.prompt || "generation"}
+      width={140}
+      height={140}
+      loading="lazy"
+      draggable
+      onDragStart={(e) => {
+        const payload = {
+          url: fullSrc!,
+          filename: firstImage!.filename,
+          contentType: firstImage!.content_type,
+        };
+        e.dataTransfer.setData(
+          "application/x-viewcomfy-media",
+          JSON.stringify(payload)
+        );
+        e.dataTransfer.effectAllowed = "copy";
+      }}
+      className="h-[140px] w-[140px] cursor-zoom-in rounded-md border border-border object-cover transition-all hover:scale-[1.03] hover:shadow-md"
+      onError={() => {
+        if (!triedFullRef.current && fullSrc && cardSrc !== fullSrc) {
+          triedFullRef.current = true;
+          setCardSrc(fullSrc);
+        }
+      }}
+    />
+  ) : null;
+
   return (
     <div className="flex w-full flex-col items-center">
       <div className="mb-2">
-        {cardSrc && fullSrc && midSrc ? (
-          <ImageDialog
-            entry={serverGenToHistoryEntry(gen, data, midSrc)}
-            downloadUrl={fullSrc}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={cardSrc}
-              alt={data.prompt || "generation"}
-              width={140}
-              height={140}
-              loading="lazy"
-              draggable
-              onDragStart={(e) => {
-                // Drop carries the FULL-RESOLUTION URL, not the thumb /
-                // mid preview. The dropzone fetches this URL on drop and
-                // ingests the original file. MIME matches viewcomfy's so
-                // the same payload works in both apps.
-                const payload = {
-                  url: fullSrc!,
-                  filename: firstImage!.filename,
-                  contentType: firstImage!.content_type,
-                };
-                e.dataTransfer.setData(
-                  "application/x-viewcomfy-media",
-                  JSON.stringify(payload)
-                );
-                e.dataTransfer.effectAllowed = "copy";
-              }}
-              className="h-[140px] w-[140px] cursor-zoom-in rounded-md border border-border object-cover transition-all hover:scale-[1.03] hover:shadow-md"
-              onError={() => {
-                if (!triedFullRef.current && fullSrc && cardSrc !== fullSrc) {
-                  triedFullRef.current = true;
-                  setCardSrc(fullSrc);
-                }
-              }}
-            />
-          </ImageDialog>
+        {thumbJsx ? (
+          initialSiblingIndex >= 0 ? (
+            <ImageDialog
+              entry={siblings[initialSiblingIndex]}
+              downloadUrl={fullSrc ?? undefined}
+              siblings={siblings.length > 1 ? siblings : undefined}
+              initialIndex={initialSiblingIndex}
+              onNearEnd={onNearEnd}
+            >
+              {thumbJsx}
+            </ImageDialog>
+          ) : (
+            // Legacy row without uuid-shaped filename — can't safely
+            // place it in the sibling list, so fall back to the old
+            // single-image dialog (no chevrons, no keyboard nav).
+            <ImageDialog
+              entry={serverGenToHistoryEntry(gen, data, midSrc!)}
+              downloadUrl={fullSrc ?? undefined}
+            >
+              {thumbJsx}
+            </ImageDialog>
+          )
         ) : pendingEntry ? (
           <div className="h-[140px] w-[140px] animate-pulse rounded-md border border-border bg-muted/80" />
         ) : (
