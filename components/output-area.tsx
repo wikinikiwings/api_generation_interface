@@ -18,6 +18,8 @@ import {
   subscribe as subscribePending,
   getAll as getAllPending,
 } from "@/lib/pending-history";
+import { BlurUpImage } from "@/components/blur-up-image";
+import { thumbUrlForEntry } from "@/lib/history-urls";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -253,9 +255,9 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
   const card = (
     <div className={cn(cardBase, isDone && "cursor-zoom-in hover:shadow-md")}>
       {isDone && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={entry.previewUrl ?? entry.outputUrl}
+        <BlurUpImage
+          sharpSrc={(entry.previewUrl ?? entry.outputUrl)!}
+          backdropSrc={thumbUrlForEntry(entry)}
           alt={entry.prompt}
           draggable
           onDragStart={(e) => {
@@ -276,7 +278,9 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
             );
             e.dataTransfer.effectAllowed = "copy";
           }}
-          className="h-full w-full object-contain transition-transform group-hover:scale-[1.02]"
+          fit="contain"
+          revealMs={700}
+          className="h-full w-full transition-transform group-hover:scale-[1.02]"
         />
       )}
 
