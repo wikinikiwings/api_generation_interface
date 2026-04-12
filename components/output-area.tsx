@@ -108,10 +108,8 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
         previewUrl: midUrl,
         originalUrl: fullUrl,
         outputUrl: midUrl,
+        thumbUrl,
       });
-      // Suppress unused var warning for thumbUrl (not currently
-      // surfaced to OutputArea — sidebar preloader handles it).
-      void thumbUrl;
     }
 
     // Merge and sort desc by createdAt. Cap at 10.
