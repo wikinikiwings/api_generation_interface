@@ -43,6 +43,11 @@ type Listener = () => void;
 const map = new Map<string, PendingGeneration>();
 const listeners = new Set<Listener>();
 
+// Cached sorted snapshot. Invalidated (set to null) by every mutating
+// function before emit(). getAll() rebuilds it lazily. This gives
+// useSyncExternalStore the reference-stable snapshot it requires.
+let snapshot: PendingGeneration[] | null = null;
+
 const REVOKE_DELAY_MS = 2000;
 
 function emit() {
@@ -55,14 +60,17 @@ export function subscribe(listener: Listener): () => void {
 }
 
 export function getAll(): PendingGeneration[] {
+  if (snapshot) return snapshot;
   // Newest first, matching server-history ordering.
-  return Array.from(map.values()).sort(
+  snapshot = Array.from(map.values()).sort(
     (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)
   );
+  return snapshot;
 }
 
 export function addPending(entry: PendingGeneration): void {
   map.set(entry.uuid, entry);
+  snapshot = null;
   emit();
 }
 
@@ -70,6 +78,7 @@ export function markError(uuid: string, message: string): void {
   const cur = map.get(uuid);
   if (!cur) return;
   map.set(uuid, { ...cur, uploadError: message });
+  snapshot = null;
   emit();
 }
 
@@ -78,6 +87,7 @@ export function clearError(uuid: string): void {
   if (!cur || !cur.uploadError) return;
   const { uploadError: _removed, ...rest } = cur;
   map.set(uuid, rest as PendingGeneration);
+  snapshot = null;
   emit();
 }
 
@@ -92,6 +102,7 @@ export function confirmPending(uuid: string): void {
   const cur = map.get(uuid);
   if (!cur) return;
   map.delete(uuid);
+  snapshot = null;
   emit();
   scheduleRevoke([cur.thumbBlobUrl, cur.midBlobUrl, cur.fullBlobUrl]);
 }
@@ -101,6 +112,7 @@ export function removePending(uuid: string): void {
   const cur = map.get(uuid);
   if (!cur) return;
   map.delete(uuid);
+  snapshot = null;
   emit();
   revoke([cur.thumbBlobUrl, cur.midBlobUrl, cur.fullBlobUrl]);
 }
@@ -132,4 +144,5 @@ function revoke(urls: string[]): void {
 export function _resetForTest(): void {
   map.clear();
   listeners.clear();
+  snapshot = null;
 }

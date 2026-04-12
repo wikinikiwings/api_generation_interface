@@ -90,7 +90,7 @@ function buildUrl(p: UseHistoryParams, offset: number): string {
  * (legacy rows with non-uuid filenames). Used to dedupe pending vs server.
  */
 function extractUuid(filepath: string): string | null {
-  const m = /^([0-9a-f-]{36})\./i.exec(filepath);
+  const m = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\./i.exec(filepath);
   return m ? m[1].toLowerCase() : null;
 }
 
@@ -102,12 +102,14 @@ function serverHasUuid(gen: ServerGeneration, uuid: string): boolean {
 export function useHistory(params: UseHistoryParams) {
   const { username, startDate, endDate } = params;
   const [items, setItems] = React.useState<ServerGeneration[]>([]);
-  const [pending, setPending] = React.useState<pendingHistory.PendingGeneration[]>(
-    () => pendingHistory.getAll()
+  // External-store subscription via React 18 primitive: eliminates the
+  // tearing window between the initial snapshot and subscribe call, and
+  // replaces the useState+useEffect pair with a single hook.
+  const pending = React.useSyncExternalStore(
+    pendingHistory.subscribe,
+    pendingHistory.getAll,
+    pendingHistory.getAll // server snapshot for SSR — empty array is fine
   );
-  React.useEffect(() => {
-    return pendingHistory.subscribe(() => setPending(pendingHistory.getAll()));
-  }, []);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isLoadingMore, setIsLoadingMore] = React.useState(false);
   const [hasMore, setHasMore] = React.useState(false);
