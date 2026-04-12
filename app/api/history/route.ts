@@ -7,16 +7,11 @@ import {
 } from "@/lib/history-db";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { v4 as uuidv4 } from "uuid";
-import sharp from "sharp";
 
-const THUMB_WIDTH = 280;
-const THUMB_QUALITY = 70;
-const MID_WIDTH = 1200;
-const MID_QUALITY = 85;
+// sharp is no longer imported — client pre-generates thumb/mid.
 
-// Read more generously than /api/generate/submit since we write image files
-export const maxDuration = 60;
+// Read more generously than /api/generate/submit since we write image files.
+export const maxDuration = 30;
 
 /**
  * GET /api/history?username=X&startDate=&endDate=&limit=&offset=
@@ -45,15 +40,27 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/history — multipart form:
- *   username, workflowName, promptData (JSON string), executionTimeSeconds,
- *   output_0, output_1, ... (File entries)
+ *   uuid          required, matches /^[0-9a-f-]{36}$/i (crypto.randomUUID format)
+ *   username      required
+ *   workflowName  string
+ *   promptData    JSON string
+ *   executionTimeSeconds  number string
+ *   original      File, image/*
+ *   thumb         File, image/jpeg
+ *   mid           File, image/jpeg
  *
- * For each image output generates thumb_{uuid}.jpg (280px) + mid_{uuid}.png (1200px)
- * via sharp, alongside the original. Returns { id, success }.
+ * Writes three files in parallel:
+ *   <uuid>.<ext>       — original bytes
+ *   thumb_<uuid>.jpg   — client-generated 240px
+ *   mid_<uuid>.jpg     — client-generated 1200px
+ *
+ * No sharp usage — the client is the sole generator of variants.
+ * Returns { id, success, fullUrl, thumbUrl, midUrl }.
  */
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
+    const uuid = (formData.get("uuid") as string | null)?.trim() ?? "";
     const username = formData.get("username") as string;
     const workflowName = (formData.get("workflowName") as string) || "";
     const promptData = JSON.parse(
@@ -62,6 +69,9 @@ export async function POST(request: NextRequest) {
     const executionTimeSeconds = parseFloat(
       (formData.get("executionTimeSeconds") as string) || "0"
     );
+    const original = formData.get("original");
+    const thumb = formData.get("thumb");
+    const mid = formData.get("mid");
 
     if (!username) {
       return NextResponse.json(
@@ -69,53 +79,74 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (!/^[0-9a-f-]{36}$/i.test(uuid)) {
+      return NextResponse.json(
+        { error: "valid uuid is required" },
+        { status: 400 }
+      );
+    }
+    if (
+      !(original instanceof File) ||
+      !(thumb instanceof File) ||
+      !(mid instanceof File)
+    ) {
+      return NextResponse.json(
+        { error: "original, thumb, mid files are required" },
+        { status: 400 }
+      );
+    }
+    if (!original.type.startsWith("image/")) {
+      return NextResponse.json(
+        { error: "original must be image/*" },
+        { status: 400 }
+      );
+    }
+    if (thumb.type !== "image/jpeg" || mid.type !== "image/jpeg") {
+      return NextResponse.json(
+        { error: "thumb and mid must be image/jpeg" },
+        { status: 400 }
+      );
+    }
 
-    const outputs: {
-      filename: string;
-      filepath: string;
-      contentType: string;
-      size: number;
-    }[] = [];
     const dir = getHistoryImagesDir();
+    const ext = path.extname(original.name) || getExtFromMime(original.type);
+    const originalFilename = `${uuid}${ext}`;
+    const thumbFilename = `thumb_${uuid}.jpg`;
+    const midFilename = `mid_${uuid}.jpg`;
 
-    for (const [key, value] of Array.from(formData.entries())) {
-      if (!key.startsWith("output_") || !(value instanceof File)) continue;
-      const file = value;
-      const ext = path.extname(file.name) || getExtFromMime(file.type);
-      const savedFilename = `${uuidv4()}${ext}`;
-      const savedFilepath = path.join(dir, savedFilename);
-      const buffer = Buffer.from(await file.arrayBuffer());
-      await fs.writeFile(savedFilepath, buffer);
+    const originalPath = path.join(dir, originalFilename);
+    const thumbPath = path.join(dir, thumbFilename);
+    const midPath = path.join(dir, midFilename);
 
-      if (
-        file.type.startsWith("image/") &&
-        file.type !== "image/vnd.adobe.photoshop"
-      ) {
-        const baseName = savedFilename.replace(/\.[^.]+$/, "");
-        try {
-          await sharp(buffer)
-            .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
-            .jpeg({ quality: THUMB_QUALITY })
-            .toFile(path.join(dir, `thumb_${baseName}.jpg`));
-        } catch (e) {
-          console.error("[history POST] thumb failed:", e);
-        }
-        try {
-          await sharp(buffer)
-            .resize({ width: MID_WIDTH, withoutEnlargement: true })
-            .png({ quality: MID_QUALITY })
-            .toFile(path.join(dir, `mid_${baseName}.png`));
-        } catch (e) {
-          console.error("[history POST] mid-res failed:", e);
-        }
-      }
+    // Uuid collision check — if any of the three files already exists,
+    // refuse to overwrite. Client treats 409 as a bug and retries with
+    // a fresh uuid.
+    const [oExists, tExists, mExists] = await Promise.all([
+      exists(originalPath),
+      exists(thumbPath),
+      exists(midPath),
+    ]);
+    if (oExists || tExists || mExists) {
+      return NextResponse.json(
+        { error: "uuid collision" },
+        { status: 409 }
+      );
+    }
 
-      outputs.push({
-        filename: file.name,
-        filepath: savedFilename,
-        contentType: file.type,
-        size: file.size,
-      });
+    // Write all three in parallel. If any write fails, roll back the
+    // others so no partial state survives on disk.
+    const written: string[] = [];
+    try {
+      await Promise.all([
+        writeAndTrack(originalPath, original, written),
+        writeAndTrack(thumbPath, thumb, written),
+        writeAndTrack(midPath, mid, written),
+      ]);
+    } catch (err) {
+      await Promise.all(
+        written.map((p) => fs.unlink(p).catch(() => undefined))
+      );
+      throw err;
     }
 
     const id = saveGeneration({
@@ -123,22 +154,46 @@ export async function POST(request: NextRequest) {
       workflowName,
       promptData,
       executionTimeSeconds,
-      outputs,
+      outputs: [
+        {
+          filename: original.name,
+          filepath: originalFilename,
+          contentType: original.type,
+          size: original.size,
+        },
+      ],
     });
-    // Return the filepath of the first image output too, so the client
-    // can build /api/history/image/{filepath} URLs (mid + original) and
-    // rewrite the in-memory entry to point at our cache instead of the
-    // provider CDN.
-    const firstImage = outputs.find((o) => o.contentType.startsWith("image/"));
+
     return NextResponse.json({
       id,
       success: true,
-      filepath: firstImage?.filepath ?? null,
+      fullUrl: `/api/history/image/${encodeURIComponent(originalFilename)}`,
+      thumbUrl: `/api/history/image/${encodeURIComponent(thumbFilename)}`,
+      midUrl: `/api/history/image/${encodeURIComponent(midFilename)}`,
     });
   } catch (err) {
     console.error("[history POST] failed:", err);
     return NextResponse.json({ error: "Failed to save history" }, { status: 500 });
   }
+}
+
+async function exists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function writeAndTrack(
+  filepath: string,
+  file: File,
+  tracker: string[]
+): Promise<void> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await fs.writeFile(filepath, buffer);
+  tracker.push(filepath);
 }
 
 /**
