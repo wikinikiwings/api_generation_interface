@@ -306,6 +306,7 @@ export function GenerateForm() {
         previewUrl: midBlobUrl,
         originalUrl: fullBlobUrl,
         outputUrl: midBlobUrl,
+        thumbUrl: thumbBlobUrl,
         confirmed: false,
         localBlobUrls: [thumbBlobUrl, midBlobUrl, fullBlobUrl].filter(
           (u): u is string => Boolean(u)
@@ -345,6 +346,7 @@ export function GenerateForm() {
               previewUrl: res.midUrl,
               originalUrl: res.fullUrl,
               outputUrl: res.midUrl,
+              thumbUrl: res.thumbUrl,
               confirmed: true,
               localBlobUrls: undefined,
             });
@@ -406,6 +408,7 @@ export function GenerateForm() {
           previewUrl: res.midUrl,
           originalUrl: res.fullUrl,
           outputUrl: res.midUrl,
+          thumbUrl: res.thumbUrl,
           confirmed: true,
           localBlobUrls: undefined,
         });
