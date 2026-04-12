@@ -42,6 +42,11 @@ export async function createImageVariants(
   } finally {
     // ImageBitmap is GC-able but close() releases GPU memory eagerly.
     if ("close" in bitmap) bitmap.close();
+    // For the HTMLImageElement facade path, revoke the blob URL here — after
+    // both encodeVariant calls complete — so the image element retains its
+    // decoded backing through both draw passes.
+    const f = bitmap as unknown as { __blobUrl?: string };
+    if (f.__blobUrl) URL.revokeObjectURL(f.__blobUrl);
   }
 }
 
@@ -74,11 +79,15 @@ async function decodeViaImageElement(blob: Blob): Promise<ImageBitmap> {
       width: img.naturalWidth,
       height: img.naturalHeight,
       close: () => {},
-      // @ts-ignore — HTMLImageElement stands in for ImageBitmap here
+      // @ts-ignore — the outer `as unknown as ImageBitmap` cast silences the
+      // type mismatch before @ts-expect-error can engage (TS2578), so we use
+      // @ts-ignore instead. The HTMLImageElement stands in for ImageBitmap.
       __img: img,
+      __blobUrl: url,
     } as unknown as ImageBitmap;
-  } finally {
+  } catch (e) {
     URL.revokeObjectURL(url);
+    throw e;
   }
 }
 
