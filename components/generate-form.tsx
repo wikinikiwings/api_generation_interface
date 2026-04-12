@@ -221,12 +221,7 @@ export function GenerateForm() {
         console.warn("[history] skip POST: no username");
         return;
       }
-      if (typeof crypto === "undefined" || !("randomUUID" in crypto)) {
-        console.error("[history] crypto.randomUUID unavailable");
-        toast.error("Browser too old — cannot save to history");
-        return;
-      }
-      const uploadUuid = crypto.randomUUID();
+      const uploadUuid = uuid();
 
       const hasImages = images.length > 0;
       const workflowName = `wavespeed:${activeProvider}/${selectedModel}/${
@@ -371,7 +366,7 @@ export function GenerateForm() {
               uploadUuid,
               "— retrying with fresh uuid"
             );
-            const freshUuid = crypto.randomUUID();
+            const freshUuid = uuid();
             res = await uploadHistoryEntry({
               uuid: freshUuid,
               username,

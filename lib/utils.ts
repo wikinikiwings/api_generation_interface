@@ -64,11 +64,47 @@ export function fileToDataURL(file: File): Promise<string> {
   });
 }
 
+/**
+ * Generate a canonical RFC-4122 v4 UUID string.
+ *
+ * Tries `crypto.randomUUID` first (secure-context only — HTTPS or
+ * localhost). Falls back to `crypto.getRandomValues` (Web Crypto,
+ * available everywhere) with manual v4 formatting. Final fallback
+ * uses `Math.random` — not cryptographically strong, but the output
+ * is still RFC-compliant so it passes the server's uuid regex.
+ *
+ * We need valid v4 shape because `app/api/history/route.ts` validates
+ * submitted uuids against /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.
+ */
 export function uuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const bytes = new Uint8Array(16);
+  // Use a local alias to escape TypeScript's narrowing — at this point
+  // crypto is defined but `randomUUID` is absent (non-secure context).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const _crypto: any = typeof crypto !== "undefined" ? crypto : undefined;
+  if (_crypto && typeof _crypto.getRandomValues === "function") {
+    _crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i++) bytes[i] = (Math.random() * 256) | 0;
+  }
+  // Set version (4) and variant (10) bits per RFC-4122.
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return (
+    hex.slice(0, 8) +
+    "-" +
+    hex.slice(8, 12) +
+    "-" +
+    hex.slice(12, 16) +
+    "-" +
+    hex.slice(16, 20) +
+    "-" +
+    hex.slice(20, 32)
+  );
 }
 
 /** Format execution time in ms as "Xm Ys" (e.g. "2m 7s", "0m 13s"). */
