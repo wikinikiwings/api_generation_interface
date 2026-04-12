@@ -11,7 +11,7 @@ import { cancelGeneration } from "@/components/generate-form";
 import { cn, copyToClipboard, startOfToday } from "@/lib/utils";
 import type { HistoryEntry } from "@/types/wavespeed";
 import { useUser } from "@/app/providers/user-provider";
-import { useHistory, extractUuid, type ServerGeneration } from "@/hooks/use-history";
+import { useHistory, extractUuid, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
 import { useGenerationEvents } from "@/hooks/use-generation-events";
 import { parsePromptData, serverGenToHistoryEntry } from "@/lib/server-gen-adapter";
 import {
@@ -150,9 +150,11 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         // Optimistic local cleanup. The Zustand entry (if any) goes away
-        // immediately; the remote serverToday list refetches via SSE +
-        // HISTORY_REFRESH_EVENT shortly after.
+        // immediately; we also fire HISTORY_REFRESH_EVENT so the History
+        // sidebar refetches and drops this row without waiting on SSE
+        // (which can be lost to HMR in dev).
         remove(entry.id);
+        broadcastHistoryRefresh();
         toast.success("Удалено");
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Delete failed");

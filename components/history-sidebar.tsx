@@ -323,7 +323,7 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
           <div className="flex flex-col items-center gap-6">
             {visibleItems.map((g) => (
               <ServerEntryCard
-                key={g.id}
+                key={stableGenerationId(g)}
                 gen={g}
                 onDelete={() => handleDelete(g)}
                 siblings={navSiblings}
