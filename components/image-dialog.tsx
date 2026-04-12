@@ -10,7 +10,8 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import type { HistoryEntry } from "@/types/wavespeed";
-import { useCachedImage } from "@/lib/image-cache";
+import { BlurUpImage } from "@/components/blur-up-image";
+import { thumbUrlForEntry } from "@/lib/history-urls";
 
 export interface ImageDialogProps {
   entry: HistoryEntry;
@@ -214,15 +215,9 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
     triedFallbackRef.current = false;
   }, [currentEntry.outputUrl]);
 
-  // Consult the image-cache for the preview URL. If cached, we render
-  // from memory; if not, we fall back to the direct URL which will
-  // populate the cache as it loads.
-  const cachedPreview = useCachedImage(
-    currentEntry.outputUrl && !currentEntry.outputUrl.startsWith("blob:")
-      ? currentEntry.outputUrl
-      : null
-  );
-  const effectivePreviewSrc = cachedPreview ?? previewSrc;
+  // BlurUpImage handles its own cache integration via useCachedImage
+  // internally; we just pass the logical URL here.
+  const effectivePreviewSrc = previewSrc;
 
   // Keyboard navigation: ← / → switch siblings while the dialog is open.
   React.useEffect(() => {
@@ -416,7 +411,9 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
         <div className="flex flex-col items-center gap-3">
           <div className="group/nav relative overflow-hidden rounded-lg bg-background/20 shadow-2xl">
             <ZoomableImage
+              key={currentEntry.id}
               src={effectivePreviewSrc}
+              backdropSrc={thumbUrlForEntry(currentEntry)}
               alt={currentEntry.prompt}
               originalUrl={effectiveDownloadUrl}
               downloadFilename={`wavespeed-${currentEntry.taskId || currentEntry.id}.${currentEntry.outputFormat}`}
@@ -482,6 +479,11 @@ const DBL_CLICK_ZOOM = 2.0; // double-click toggles between 1× and this
 
 interface ZoomableImageProps {
   src: string | undefined;
+  /**
+   * Optional backdrop (thumb URL) for the blur-up reveal. Passed through
+   * to BlurUpImage. Undefined → BlurUpImage uses `src` as its own backdrop.
+   */
+  backdropSrc?: string;
   alt: string;
   onLoadError: () => void;
   /**
@@ -496,7 +498,14 @@ interface ZoomableImageProps {
   downloadFilename?: string;
 }
 
-function ZoomableImage({ src, alt, onLoadError, originalUrl, downloadFilename }: ZoomableImageProps) {
+function ZoomableImage({
+  src,
+  backdropSrc,
+  alt,
+  onLoadError,
+  originalUrl,
+  downloadFilename,
+}: ZoomableImageProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [scale, setScale] = React.useState(1);
   const [tx, setTx] = React.useState(0);
@@ -946,13 +955,12 @@ function ZoomableImage({ src, alt, onLoadError, originalUrl, downloadFilename }:
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        onError={onLoadError}
-        className="max-h-[82vh] max-w-[92vw] object-contain"
+      {/* Zoom/pan transform now lives on this wrapper div so both the
+          sharp and backdrop layers transform together. The BlurUpImage
+          root is sized by the sharp image's intrinsic dimensions
+          (fit="natural"), capped by max-h/max-w on the wrapper. */}
+      <div
+        className="max-h-[82vh] max-w-[92vw]"
         style={{
           transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
           transformOrigin: "center center",
@@ -961,7 +969,19 @@ function ZoomableImage({ src, alt, onLoadError, originalUrl, downloadFilename }:
           transition: isPanning ? "none" : "transform 120ms ease-out",
           willChange: "transform",
         }}
-      />
+      >
+        {src ? (
+          <BlurUpImage
+            sharpSrc={src}
+            backdropSrc={backdropSrc}
+            alt={alt}
+            fit="natural"
+            revealMs={400}
+            draggable={false}
+            onError={onLoadError}
+          />
+        ) : null}
+      </div>
       {menuPos && (
         <div
           data-image-context-menu
