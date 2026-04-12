@@ -37,24 +37,50 @@ export interface ImageDialogProps {
  * showing the generated image with a download button.
  */
 export function ImageDialog({ entry, children, downloadUrl, siblings, initialIndex = 0 }: ImageDialogProps) {
-  // Navigation state — which sibling is currently shown. Reset to
-  // initialIndex every time the dialog opens (so closing on image #5 and
-  // re-opening on tile #2 starts at #2, not #5).
-  const [currentIdx, setCurrentIdx] = React.useState(initialIndex);
-  const hasSiblings = !!siblings && siblings.length > 1;
-  const currentEntry = hasSiblings ? siblings![currentIdx] ?? entry : entry;
+  // Navigation state — which sibling is currently shown, tracked by id
+  // (not index) so that a reactive siblings array (entries inserted /
+  // removed while the dialog is open) keeps pointing at the right slide.
+  //
+  // Seed with the clicked entry's id so that if the sibling array is
+  // empty or doesn't yet contain the entry, we still render the trigger
+  // entry rather than crashing.
+  const siblingsList = siblings ?? [];
+  const hasSiblings = siblingsList.length > 1;
+
+  const [currentId, setCurrentId] = React.useState<string>(() => {
+    const seed = siblingsList[initialIndex]?.id ?? entry.id;
+    return seed;
+  });
+
+  // Computed: where `currentId` sits in the (possibly reactive) siblings.
+  // -1 means "not present" — handled by the disappearance effect in Task 5.
+  const currentIdx = React.useMemo(() => {
+    if (!hasSiblings) return 0;
+    return siblingsList.findIndex((s) => s.id === currentId);
+  }, [hasSiblings, siblingsList, currentId]);
+
+  const currentEntry = hasSiblings
+    ? (siblingsList[currentIdx] ?? entry)
+    : entry;
   const currentDownloadUrl =
     (hasSiblings ? currentEntry.originalUrl ?? currentEntry.outputUrl : downloadUrl) ??
     currentEntry.outputUrl;
 
   const goPrev = React.useCallback(() => {
     if (!hasSiblings) return;
-    setCurrentIdx((i) => (i - 1 + siblings!.length) % siblings!.length);
-  }, [hasSiblings, siblings]);
+    const idx = siblingsList.findIndex((s) => s.id === currentId);
+    if (idx < 0) return;
+    const next = (idx - 1 + siblingsList.length) % siblingsList.length;
+    setCurrentId(siblingsList[next].id);
+  }, [hasSiblings, siblingsList, currentId]);
+
   const goNext = React.useCallback(() => {
     if (!hasSiblings) return;
-    setCurrentIdx((i) => (i + 1) % siblings!.length);
-  }, [hasSiblings, siblings]);
+    const idx = siblingsList.findIndex((s) => s.id === currentId);
+    if (idx < 0) return;
+    const next = (idx + 1) % siblingsList.length;
+    setCurrentId(siblingsList[next].id);
+  }, [hasSiblings, siblingsList, currentId]);
 
   const [previewSrc, setPreviewSrc] = React.useState<string | undefined>(
     currentEntry.outputUrl
@@ -118,9 +144,10 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
     if (next) {
       captureTriggerRect();
       openAnimPlayedRef.current = false;
-      // Reset to the tile that was clicked, not whatever sibling we last
-      // navigated to in a previous session.
-      setCurrentIdx(initialIndex);
+      // Reset by id so subsequent re-opens start on the tile that was
+      // actually clicked, not the sibling we navigated to last time.
+      const seed = siblingsList[initialIndex]?.id ?? entry.id;
+      setCurrentId(seed);
       setOpen(true);
       return;
     }
