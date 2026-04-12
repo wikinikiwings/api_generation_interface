@@ -14,6 +14,9 @@ import type { ModelId } from "@/lib/providers/types";
 import { useUser } from "@/app/providers/user-provider";
 import { triggerHistoryRefresh } from "@/components/history-sidebar";
 import { fileToThumbnail, uuid } from "@/lib/utils";
+import { createImageVariants } from "@/lib/image-variants";
+import { uploadHistoryEntry } from "@/lib/history-upload";
+import * as pendingHistory from "@/lib/pending-history";
 import type {
   AspectRatio,
   OutputFormat,
@@ -218,87 +221,138 @@ export function GenerateForm() {
         console.warn("[history] skip POST: no username");
         return;
       }
+      const uploadUuid =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : uuid();
+      let variants: Awaited<ReturnType<typeof createImageVariants>>;
       try {
-        const fileRes = await fetch(outputUrl);
-        const blob = await fileRes.blob();
-        const filename =
-          outputUrl.split("/").pop() || `output.${outputFormat}`;
-        const file = new File([blob], filename, {
-          type: blob.type || `image/${outputFormat}`,
+        variants = await createImageVariants(outputUrl);
+      } catch (e) {
+        console.error("[history] variant generation failed:", e);
+        toast.error("Could not prepare thumbnail");
+        return;
+      }
+
+      const thumbBlobUrl = URL.createObjectURL(variants.thumb);
+      const midBlobUrl = URL.createObjectURL(variants.mid);
+      const fullBlobUrl = URL.createObjectURL(variants.full);
+
+      const hasImages = images.length > 0;
+      const workflowName = `wavespeed:${activeProvider}/${selectedModel}/${
+        hasImages ? "edit" : "t2i"
+      }`;
+      const promptPayload = {
+        prompt: prompt.trim(),
+        resolution: hasResolutions ? resolution : undefined,
+        aspectRatio: aspectRatio || undefined,
+        outputFormat,
+        provider: activeProvider,
+        modelId: selectedModel,
+        model: getModelString(activeProvider, selectedModel, hasImages),
+        inputThumbnails: thumbnails,
+      };
+
+      const originalFilename =
+        outputUrl.split("/").pop() || `output.${outputFormat}`;
+      const originalContentType =
+        variants.full.type || `image/${outputFormat}`;
+
+      // Push optimistic entry into the sidebar singleton BEFORE upload.
+      // Shape mirrors ServerGeneration just enough for the card renderer;
+      // `id: -1` is a sentinel that the card treats via `pending: true`.
+      const doUpload = () =>
+        uploadHistoryEntry({
+          uuid: uploadUuid,
+          username,
+          workflowName,
+          promptData: promptPayload,
+          executionTimeSeconds: executionTimeMs / 1000,
+          original: variants.full,
+          originalFilename,
+          originalContentType,
+          thumb: variants.thumb,
+          mid: variants.mid,
         });
 
-        const hasImages = images.length > 0;
-        const workflowName = `wavespeed:${activeProvider}/${selectedModel}/${
-          hasImages ? "edit" : "t2i"
-        }`;
-        const promptPayload = {
-          prompt: prompt.trim(),
-          resolution: hasResolutions ? resolution : undefined,
-          aspectRatio: aspectRatio || undefined,
-          outputFormat,
-          provider: activeProvider,
-          modelId: selectedModel,
-          model: getModelString(activeProvider, selectedModel, hasImages),
-          inputThumbnails: thumbnails,
-        };
-
-        const fd = new FormData();
-        fd.append("username", username);
-        fd.append("workflowName", workflowName);
-        fd.append("promptData", JSON.stringify(promptPayload));
-        fd.append(
-          "executionTimeSeconds",
-          (executionTimeMs / 1000).toString()
-        );
-        fd.append("output_0", file);
-
-        const res = await fetch("/api/history", {
-          method: "POST",
-          body: fd,
-        });
-        if (!res.ok) {
-          const body = await res.text().catch(() => "");
-          throw new Error(`HTTP ${res.status}: ${body}`);
-        }
-        // Link this client-side entry to the server-side DB row so the
-        // history-sidebar can remove it from the Output panel when the user
-        // deletes from history. We also rewrite outputUrl from the provider
-        // CDN to our own /api/history/image/{filepath} so:
-        //   1. Output area renders from a URL we control (immutable, never
-        //      expires, served with year-long Cache-Control headers).
-        //   2. We use the mid-resolution preview for Output, not the
-        //      multi-megabyte original — same visual quality at 256×256,
-        //      ~10x less data over the wire.
-        //   3. ImageDialog still gets the full original via originalUrl,
-        //      so wheel-zoom doesn't show interpolated pixels.
-        try {
-          const body = (await res.json()) as {
-            id?: number;
-            success?: boolean;
-            filepath?: string | null;
-          };
-          const patch: Partial<HistoryEntry> = {};
-          if (typeof body.id === "number") patch.serverGenId = body.id;
-          if (body.filepath) {
-            const fp = body.filepath;
-            const baseName = fp.replace(/\.[^.]+$/, "");
-            const midUrl = `/api/history/image/${encodeURIComponent(`mid_${baseName}.png`)}`;
-            const fullUrl = `/api/history/image/${encodeURIComponent(fp)}`;
-            patch.previewUrl = midUrl;
-            patch.originalUrl = fullUrl;
-            // Rewrite outputUrl to the mid preview so legacy components
-            // that read outputUrl directly (without knowing about
-            // previewUrl) also benefit from the cached server URL.
-            patch.outputUrl = midUrl;
+      const retry = () => {
+        pendingHistory.clearError(uploadUuid);
+        doUpload().then(
+          (res) => {
+            pendingHistory.confirmPending(uploadUuid);
+            updateHistory(historyId, {
+              serverGenId: res.serverGenId,
+              previewUrl: res.midUrl,
+              originalUrl: res.fullUrl,
+              outputUrl: res.midUrl,
+              confirmed: true,
+            });
+            triggerHistoryRefresh();
+          },
+          (e: Error) => {
+            pendingHistory.markError(uploadUuid, e.message);
           }
-          if (Object.keys(patch).length > 0) updateHistory(historyId, patch);
-        } catch {
-          // Response wasn't JSON — not fatal.
-        }
+        );
+      };
+
+      pendingHistory.addPending({
+        pending: true,
+        uuid: uploadUuid,
+        thumbBlobUrl,
+        midBlobUrl,
+        fullBlobUrl,
+        // ServerGeneration shape — filled with values that match what
+        // the card renderer reads. `id: -1` is fine because pending
+        // entries are only matched by `pending: true`, never by id.
+        id: -1,
+        username,
+        workflow_name: workflowName,
+        prompt_data: JSON.stringify(promptPayload),
+        execution_time_seconds: executionTimeMs / 1000,
+        created_at: new Date().toISOString(),
+        status: "completed",
+        outputs: [
+          {
+            id: -1,
+            generation_id: -1,
+            filename: originalFilename,
+            filepath: `${uploadUuid}.${originalFilename.split(".").pop() || "png"}`,
+            content_type: originalContentType,
+            size: variants.full.size,
+          },
+        ],
+        retry,
+      });
+
+      // Also link blob URLs into the zustand entry so the Output panel
+      // picks them up (so right-click / drag / ImageDialog in Output
+      // work against the lightweight variants) and so blob URLs get
+      // revoked when the Output card is dismissed.
+      updateHistory(historyId, {
+        previewUrl: midBlobUrl,
+        originalUrl: fullBlobUrl,
+        outputUrl: midBlobUrl,
+        confirmed: false,
+        localBlobUrls: [thumbBlobUrl, midBlobUrl, fullBlobUrl],
+      });
+
+      try {
+        const res = await doUpload();
+        pendingHistory.confirmPending(uploadUuid);
+        updateHistory(historyId, {
+          serverGenId: res.serverGenId,
+          previewUrl: res.midUrl,
+          originalUrl: res.fullUrl,
+          outputUrl: res.midUrl,
+          confirmed: true,
+        });
         triggerHistoryRefresh();
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "Unknown error";
-        toast.error(`История не сохранилась: ${msg}`);
+        const msg = e instanceof Error ? e.message : "Upload failed";
+        pendingHistory.markError(uploadUuid, msg);
+        // Zustand entry keeps the blob URLs so the Output panel stays
+        // usable; confirmed remains false so localStorage doesn't
+        // persist a dead entry.
       }
     }
 
