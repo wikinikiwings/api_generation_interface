@@ -205,6 +205,19 @@ export function getGenerations(params: {
   return gens;
 }
 
+export function getGenerationById(id: number): IGenerationRecord | null {
+  const db = getDb();
+  const gen = db
+    .prepare(`SELECT * FROM generations WHERE id = ?`)
+    .get(id) as IGenerationRecord | undefined;
+  if (!gen) return null;
+  const outs = db
+    .prepare(`SELECT * FROM generation_outputs WHERE generation_id = ?`)
+    .all(id) as IGenerationOutput[];
+  gen.outputs = outs;
+  return gen;
+}
+
 export function deleteGeneration(
   id: number,
   username: string
