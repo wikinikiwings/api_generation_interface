@@ -18,6 +18,7 @@ import { useHistorySiblings } from "@/hooks/use-history-siblings";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { usePromptStore } from "@/stores/prompt-store";
 import { useHistoryStore } from "@/stores/history-store";
+import { markGenerationDeleted, useDeletedIds } from "@/lib/history-deletions";
 import type { HistoryEntry } from "@/types/wavespeed";
 import { BlurUpImage } from "@/components/blur-up-image";
 
@@ -139,9 +140,12 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
   // Optimistic local removal after DELETE. Since useHistory owns items, we
   // just refetch — the DELETE endpoint is fast enough.
   const [deletingIds, setDeletingIds] = React.useState<Set<number>>(new Set());
+  // Cross-surface deletions (e.g. from Output strip) land here so the
+  // sidebar hides the row instantly — no waiting on refetch.
+  const crossDeletedIds = useDeletedIds();
   const visibleItems = React.useMemo(
-    () => items.filter((g) => !deletingIds.has(g.id)),
-    [items, deletingIds]
+    () => items.filter((g) => !deletingIds.has(g.id) && !crossDeletedIds.has(g.id)),
+    [items, deletingIds, crossDeletedIds]
   );
 
   // Warm browser cache for thumb + mid variants (see lib/image-cache.ts).
@@ -178,6 +182,10 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setDeletingIds((prev) => new Set(prev).add(gen.id));
+      // Register in the cross-surface deletion set too — consistent
+      // with the Output strip delete handler and future-proofs against
+      // additional surfaces rendering server-history data.
+      markGenerationDeleted(gen.id);
 
       // Optimistic Zustand cleanup for same-tab consistency. The SSE
       // `generation.deleted` event is supposed to do this globally, but

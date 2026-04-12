@@ -20,6 +20,7 @@ import {
 } from "@/lib/pending-history";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
+import { markGenerationDeleted } from "@/lib/history-deletions";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -149,11 +150,19 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
           { method: "DELETE" }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Optimistic local cleanup. The Zustand entry (if any) goes away
-        // immediately; we also fire HISTORY_REFRESH_EVENT so the History
-        // sidebar refetches and drops this row without waiting on SSE
-        // (which can be lost to HMR in dev).
+        // Optimistic local cleanup. Three synchronous signals so every
+        // surface drops this row without waiting on a round-trip:
+        //   1. Zustand.remove — clears our local entry (Output strip).
+        //   2. markGenerationDeleted — registers the server ID as locally
+        //      deleted so the History sidebar hides it instantly via
+        //      useDeletedIds filter, without awaiting the refetch.
+        //   3. broadcastHistoryRefresh — triggers the sidebar's useHistory
+        //      to refetch shortly after, reconciling local signal with
+        //      authoritative server state.
+        // SSE still fires for cross-tab / cross-device cleanup; the local
+        // removals are idempotent so no double-remove concerns.
         remove(entry.id);
+        markGenerationDeleted(entry.serverGenId);
         broadcastHistoryRefresh();
         toast.success("Удалено");
       } catch (e) {
