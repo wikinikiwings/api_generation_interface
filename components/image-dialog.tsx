@@ -266,6 +266,42 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
     onNearEnd(remaining);
   }, [open, hasSiblings, onNearEnd, currentIdx, siblingsList.length]);
 
+  // Disappearance handling. If `currentId` is no longer present in the
+  // (reactive) siblings — typically because the SSE `generation.deleted`
+  // event removed it, or because a filter tightened — snap to the sibling
+  // that occupies the same index the deleted one used to hold, clamped
+  // to the new end. If siblings becomes empty, close the dialog.
+  //
+  // We read the "old index" by remembering the last-known idx for this
+  // currentId in a ref. Why: once the entry is gone, `siblingsList.findIndex`
+  // returns -1 and we've lost positional context without this memo.
+  const lastKnownIdxRef = React.useRef<number>(currentIdx);
+  React.useEffect(() => {
+    if (currentIdx >= 0) {
+      lastKnownIdxRef.current = currentIdx;
+    }
+  }, [currentIdx]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    if (!hasSiblings) return;
+    // currentId is still in siblings → nothing to do.
+    if (currentIdx >= 0) return;
+    // currentId vanished. If siblings empty — close; otherwise clamp.
+    if (siblingsList.length === 0) {
+      handleOpenChange(false);
+      return;
+    }
+    const clamped = Math.min(
+      Math.max(lastKnownIdxRef.current, 0),
+      siblingsList.length - 1
+    );
+    setCurrentId(siblingsList[clamped].id);
+    // Note: we do NOT call onNearEnd here; the follow-up index-change
+    // effect in Task 4 will handle that naturally if the clamped slot
+    // is near the tail.
+  }, [open, hasSiblings, currentIdx, siblingsList]);
+
   const effectiveDownloadUrl = currentDownloadUrl;
 
   if (!entry.outputUrl) {
