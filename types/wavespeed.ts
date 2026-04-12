@@ -50,6 +50,13 @@ export interface HistoryEntry {
    * outputUrl on legacy entries.
    */
   originalUrl?: string;
+  /**
+   * Thumb (~240px) preview URL. Populated alongside `previewUrl`/`originalUrl`
+   * on entries generated after the pretty-image-loading work ships. Legacy
+   * entries lack it — use `thumbUrlForEntry()` from `lib/history-urls` to
+   * derive one on demand. Used by `<BlurUpImage>` as the backdrop source.
+   */
+  thumbUrl?: string;
   outputSizeBytes?: number;
   executionTimeMs?: number;
   status: TaskStatus;
