@@ -9,7 +9,7 @@ import { useUser } from "@/app/providers/user-provider";
 import { cn, copyToClipboard, formatFullDate } from "@/lib/utils";
 import { preloadImages } from "@/lib/image-cache";
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
-import type { PendingGeneration } from "@/lib/pending-history";
+import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { useHistoryStore } from "@/stores/history-store";
 import type { HistoryEntry } from "@/types/wavespeed";
 
@@ -166,7 +166,7 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
     const urls: string[] = [];
     for (const g of visibleItems) {
       // Blob URLs are already in memory — preloading does nothing useful.
-      if ((g as PendingGeneration).pending === true) continue;
+      if (isPending(g)) continue;
       const img = g.outputs.find((o) => o.content_type.startsWith("image/"));
       if (!img) continue;
       urls.push(imgUrl(img.filepath, "thumb"));
@@ -181,12 +181,8 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
 
     // Pending (not-yet-confirmed) entry: drop it from the client-side
     // singleton. Blob URLs revoked. No server call.
-    const pending = (gen as PendingGeneration).pending === true
-      ? (gen as PendingGeneration)
-      : null;
-    if (pending) {
-      const { removePending } = await import("@/lib/pending-history");
-      removePending(pending.uuid);
+    if (isPending(gen)) {
+      removePending(gen.uuid);
       toast.success("Удалено");
       return;
     }
@@ -375,8 +371,7 @@ function ServerEntryCard({
 }) {
   const data = React.useMemo(() => parsePromptData(gen.prompt_data), [gen.prompt_data]);
   const firstImage = gen.outputs.find((o) => o.content_type.startsWith("image/"));
-  const isPending = (gen as PendingGeneration).pending === true;
-  const pendingEntry = isPending ? (gen as PendingGeneration) : null;
+  const pendingEntry = isPending(gen) ? gen : null;
   const uploadError = pendingEntry?.uploadError;
 
   const thumbSrc = pendingEntry

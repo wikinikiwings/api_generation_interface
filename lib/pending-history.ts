@@ -38,6 +38,11 @@ export interface PendingGeneration extends ServerGeneration {
   retry?: () => void;
 }
 
+/** Type-narrowing check used by sidebar render/preload/delete sites. */
+export function isPending(gen: ServerGeneration): gen is PendingGeneration {
+  return (gen as PendingGeneration).pending === true;
+}
+
 type Listener = () => void;
 
 const map = new Map<string, PendingGeneration>();
