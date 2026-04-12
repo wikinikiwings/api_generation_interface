@@ -71,7 +71,7 @@ export async function uploadHistoryEntry(
     !json.thumbUrl ||
     !json.midUrl
   ) {
-    throw new UploadError(0, `Malformed upload response: ${JSON.stringify(json)}`);
+    throw new UploadError(-1, `Malformed upload response: ${JSON.stringify(json)}`);
   }
 
   return {
@@ -82,6 +82,13 @@ export async function uploadHistoryEntry(
   };
 }
 
+/**
+ * Upload failure. `status` is the HTTP status code when the server
+ * responded (e.g. 409, 500); `-1` when the server responded 200 but
+ * the payload was malformed. Callers distinguish via `status` to
+ * decide retry strategy — do NOT use `0`, which browsers reserve
+ * for network-level aborts (CORS, offline).
+ */
 export class UploadError extends Error {
   constructor(public status: number, public body: string) {
     super(`Upload failed: HTTP ${status}${body ? ` — ${body.slice(0, 200)}` : ""}`);
