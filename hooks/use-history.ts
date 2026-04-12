@@ -176,16 +176,14 @@ export function useHistory(params: UseHistoryParams) {
 
   const mergedItems = React.useMemo(() => {
     if (pending.length === 0) return items;
-    const filteredServer = items.filter(
-      (g) => !pending.some((p) => serverHasUuid(g, p.uuid))
-    );
-    // Also drop any pending that the server view already has (protects
-    // against a brief overlap window between server refresh and
-    // confirmPending firing).
+    // Once the server refresh brings in the uuid, hide the pending
+    // entry and show the server row instead. The pending entry stays
+    // in the pending-history store for a grace period so its blob
+    // URLs remain valid for any <img> mid-swap to server URLs.
     const filteredPending = pending.filter(
       (p) => !items.some((g) => serverHasUuid(g, p.uuid))
     );
-    return [...filteredPending, ...filteredServer];
+    return [...filteredPending, ...items];
   }, [pending, items]);
 
   return {
