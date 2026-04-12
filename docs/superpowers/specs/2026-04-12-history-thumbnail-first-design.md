@@ -148,8 +148,19 @@ Old entries with `mid_*.png` continue to serve because the resolver is extension
 
 ## Out of scope (explicit)
 
-- Progressive blur-up for the Output pane (follow-up).
 - Any change to the image generation provider pipeline.
 - Server-side thumbnail generation as a fallback (removed entirely; not kept as dead code).
 - Migration of existing `.png` mid files to `.jpg`.
 - Removal of the `sharp` dependency from `package.json` (verify no other usages; remove in a follow-up PR if unused).
+
+## Future work
+
+After this spec ships, the tiered variants (`thumb` JPEG / `mid` JPEG / `full`) become the foundation for a **progressive image-loading experience in the main Output pane**: start by rendering a blurred tiny image (the `thumb`, or an even smaller LQIP) immediately, then sharpen as `mid` and `full` finish loading. This delivers a smoother, more "polished" perceived-loading feel — the same pattern used by Medium, Next.js `<Image>`, and modern photo apps.
+
+Concrete follow-ups this unlocks:
+
+- **Blur-up / LQIP transitions in Output** — cross-fade from `thumb` (blurred, upscaled CSS) → `mid` → `full` with a short duration. No extra network cost on top of what this spec already produces.
+- **Progressive detail in ImageDialog** — same pattern when opening a history card to full-screen.
+- **Optional: even tinier LQIP** (e.g. 20px base64-embedded in the entry) for zero-RTT first paint.
+
+This is explicitly NOT part of the current spec — it gets its own design doc once this one lands.
