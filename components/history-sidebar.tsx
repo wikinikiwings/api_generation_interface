@@ -175,33 +175,27 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
       return;
     }
 
+    // Optimistic UI — fire all local hides BEFORE awaiting the DELETE
+    // round-trip so the card vanishes instantly across every surface.
+    setDeletingIds((prev) => new Set(prev).add(gen.id));
+    markGenerationDeleted(gen.id);
+    const store = useHistoryStore.getState();
+    const orphanedLocalIds = store.entries
+      .filter((e) => e.serverGenId === gen.id)
+      .map((e) => e.id);
+    for (const localId of orphanedLocalIds) store.remove(localId);
+
     try {
       const res = await fetch(
         `/api/history?id=${gen.id}&username=${encodeURIComponent(username)}`,
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setDeletingIds((prev) => new Set(prev).add(gen.id));
-      // Register in the cross-surface deletion set too — consistent
-      // with the Output strip delete handler and future-proofs against
-      // additional surfaces rendering server-history data.
-      markGenerationDeleted(gen.id);
-
-      // Optimistic Zustand cleanup for same-tab consistency. The SSE
-      // `generation.deleted` event is supposed to do this globally, but
-      // in dev mode HMR can lose the subscriber registration between the
-      // DELETE firing and the broadcast reaching the client — removing
-      // the matching local entry here ensures the Output strip also
-      // reflects the delete immediately without waiting for SSE.
-      const store = useHistoryStore.getState();
-      const orphanedLocalIds = store.entries
-        .filter((e) => e.serverGenId === gen.id)
-        .map((e) => e.id);
-      for (const localId of orphanedLocalIds) store.remove(localId);
-
       toast.success("Удалено");
       void refetch();
     } catch (e) {
+      // UI already hid the entry. Surface the error via toast rather
+      // than resurrecting — a reload fetches the authoritative state.
       toast.error(e instanceof Error ? e.message : "Delete failed");
     }
   }

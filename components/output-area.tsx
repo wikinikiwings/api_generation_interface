@@ -144,28 +144,31 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
       }
       if (!username) return;
       if (!confirm("Удалить эту запись из истории?")) return;
+      const serverGenId = entry.serverGenId;
+
+      // Optimistic UI — hide across all surfaces BEFORE awaiting the
+      // DELETE round-trip. Three synchronous signals:
+      //   1. Zustand.remove — Output strip drops the local entry now.
+      //   2. markGenerationDeleted — History sidebar filters by the
+      //      cross-surface deleted-ids set and hides immediately.
+      //   3. broadcastHistoryRefresh — queues the sidebar refetch to
+      //      reconcile with authoritative server state once available.
+      // SSE still fires for cross-tab / cross-device cleanup; idempotent.
+      remove(entry.id);
+      markGenerationDeleted(serverGenId);
+      broadcastHistoryRefresh();
+
       try {
         const res = await fetch(
-          `/api/history?id=${entry.serverGenId}&username=${encodeURIComponent(username)}`,
+          `/api/history?id=${serverGenId}&username=${encodeURIComponent(username)}`,
           { method: "DELETE" }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // Optimistic local cleanup. Three synchronous signals so every
-        // surface drops this row without waiting on a round-trip:
-        //   1. Zustand.remove — clears our local entry (Output strip).
-        //   2. markGenerationDeleted — registers the server ID as locally
-        //      deleted so the History sidebar hides it instantly via
-        //      useDeletedIds filter, without awaiting the refetch.
-        //   3. broadcastHistoryRefresh — triggers the sidebar's useHistory
-        //      to refetch shortly after, reconciling local signal with
-        //      authoritative server state.
-        // SSE still fires for cross-tab / cross-device cleanup; the local
-        // removals are idempotent so no double-remove concerns.
-        remove(entry.id);
-        markGenerationDeleted(entry.serverGenId);
-        broadcastHistoryRefresh();
         toast.success("Удалено");
       } catch (e) {
+        // UI already hid the entry. On server failure we surface a toast
+        // rather than resurrecting — reload will re-fetch authoritative
+        // state if the user needs to see the row reappear.
         toast.error(e instanceof Error ? e.message : "Delete failed");
       }
     },
