@@ -16,7 +16,6 @@ import {
 import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
 import { useHistorySiblings } from "@/hooks/use-history-siblings";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
-import { useHistoryStore } from "@/stores/history-store";
 import { usePromptStore } from "@/stores/prompt-store";
 import type { HistoryEntry } from "@/types/wavespeed";
 
@@ -177,18 +176,6 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setDeletingIds((prev) => new Set(prev).add(gen.id));
-
-      // Also drop the matching entry from the client-side zustand store
-      // that feeds the Output panel. Exact match via serverGenId, which
-      // generate-form writes after POST /api/history succeeds. Legacy
-      // entries (pre-v3 store) and entries from generations whose POST
-      // failed simply won't match — safe fallback: Output keeps showing
-      // them and the user can dismiss via the × on the Output card.
-      const store = useHistoryStore.getState();
-      const toRemove = store.entries
-        .filter((e) => e.serverGenId === gen.id)
-        .map((e) => e.id);
-      for (const id of toRemove) store.remove(id);
 
       toast.success("Удалено");
       void refetch();
