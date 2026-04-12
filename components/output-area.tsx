@@ -128,9 +128,13 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
   //      (History never rendered it either).
   //   2) Server-backed entry (has serverGenId — either a local entry
   //      that reached the server, or a remote serverToday row): confirm,
-  //      DELETE /api/history, toast. Zustand cleanup happens via the
-  //      SSE generation.deleted event landing in useGenerationEvents
-  //      (single source of truth for cross-tab/device consistency).
+  //      DELETE /api/history, toast. Locally we ALSO remove from Zustand
+  //      immediately on success, rather than relying solely on the SSE
+  //      `generation.deleted` event round-trip — in dev mode that event
+  //      can be lost to HMR-induced subscriber-map resets, which leaves
+  //      the card stranded. SSE still runs for cross-tab / cross-device
+  //      cleanup; our local remove-by-id is idempotent so the duplicate
+  //      removal is harmless.
   const handleRemove = React.useCallback(
     async (entry: HistoryEntry) => {
       if (typeof entry.serverGenId !== "number") {
@@ -145,6 +149,10 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
           { method: "DELETE" }
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // Optimistic local cleanup. The Zustand entry (if any) goes away
+        // immediately; the remote serverToday list refetches via SSE +
+        // HISTORY_REFRESH_EVENT shortly after.
+        remove(entry.id);
         toast.success("Удалено");
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Delete failed");

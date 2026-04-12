@@ -17,6 +17,7 @@ import { useHistory, HISTORY_REFRESH_EVENT, broadcastHistoryRefresh, type Server
 import { useHistorySiblings } from "@/hooks/use-history-siblings";
 import { isPending, removePending, type PendingGeneration } from "@/lib/pending-history";
 import { usePromptStore } from "@/stores/prompt-store";
+import { useHistoryStore } from "@/stores/history-store";
 import type { HistoryEntry } from "@/types/wavespeed";
 import { BlurUpImage } from "@/components/blur-up-image";
 
@@ -177,6 +178,18 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setDeletingIds((prev) => new Set(prev).add(gen.id));
+
+      // Optimistic Zustand cleanup for same-tab consistency. The SSE
+      // `generation.deleted` event is supposed to do this globally, but
+      // in dev mode HMR can lose the subscriber registration between the
+      // DELETE firing and the broadcast reaching the client — removing
+      // the matching local entry here ensures the Output strip also
+      // reflects the delete immediately without waiting for SSE.
+      const store = useHistoryStore.getState();
+      const orphanedLocalIds = store.entries
+        .filter((e) => e.serverGenId === gen.id)
+        .map((e) => e.id);
+      for (const localId of orphanedLocalIds) store.remove(localId);
 
       toast.success("Удалено");
       void refetch();
