@@ -4,7 +4,9 @@ import {
   getGenerations,
   deleteGeneration,
   getHistoryImagesDir,
+  getGenerationById,
 } from "@/lib/history-db";
+import { broadcastToUser } from "@/lib/sse-broadcast";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -170,6 +172,21 @@ export async function POST(request: NextRequest) {
       ],
     });
 
+    // Fan out the new row to every connected client of this username.
+    // Errors are caught so a broadcast failure never affects the HTTP
+    // response — clients will catch up on next reconnect's refetch.
+    try {
+      const newRow = getGenerationById(id);
+      if (newRow) {
+        broadcastToUser(username, {
+          type: "generation.created",
+          data: newRow,
+        });
+      }
+    } catch (err) {
+      console.error("[history POST] broadcast failed:", err);
+    }
+
     return NextResponse.json({
       id,
       success: true,
@@ -222,6 +239,16 @@ export async function DELETE(request: NextRequest) {
   }
   try {
     const { deleted } = deleteGeneration(parseInt(id), username);
+    if (deleted) {
+      try {
+        broadcastToUser(username, {
+          type: "generation.deleted",
+          data: { id: parseInt(id) },
+        });
+      } catch (err) {
+        console.error("[history DELETE] broadcast failed:", err);
+      }
+    }
     return NextResponse.json({ success: deleted });
   } catch (err) {
     console.error("[history DELETE] failed:", err);
