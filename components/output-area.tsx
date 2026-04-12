@@ -9,6 +9,10 @@ import { useHistoryStore } from "@/stores/history-store";
 import { cancelGeneration } from "@/components/generate-form";
 import { cn, copyToClipboard, startOfToday } from "@/lib/utils";
 import type { HistoryEntry } from "@/types/wavespeed";
+import { useUser } from "@/app/providers/user-provider";
+import { useHistory, type ServerGeneration } from "@/hooks/use-history";
+import { useGenerationEvents } from "@/hooks/use-generation-events";
+import { parsePromptData, serverGenToHistoryEntry } from "@/lib/server-gen-adapter";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -24,18 +28,77 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
     setMounted(true);
   }, []);
 
+  const { username } = useUser();
+  // Fetch today's server-backed generations for this username. This
+  // picks up completed rows from other devices. The endpoint filters
+  // by date using ISO strings; we pass start/end of the local "today".
+  const todayDateRange = React.useMemo(() => {
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(23, 59, 59, 999);
+    return { startDate: start, endDate: end };
+  }, []);
+  const { items: serverToday } = useHistory({
+    username,
+    startDate: todayDateRange.startDate,
+    endDate: todayDateRange.endDate,
+  });
+  // Subscribe to server-pushed history events for near-real-time
+  // cross-device sync. No-op when username is null.
+  useGenerationEvents(username);
+
   // Show today's entries (newest first), capped at the last 10. The cap
   // keeps the Output strip short and predictable even after a long
   // generation session, while still respecting the "only today" boundary
   // — nothing from yesterday ever leaks in.
   const todayStart = React.useMemo(() => startOfToday(), []);
-  const todayEntries = React.useMemo(
-    () =>
-      entries
-        .filter((e) => e.createdAt >= todayStart)
-        .slice(0, 10),
-    [entries, todayStart]
-  );
+
+  const todayEntries = React.useMemo(() => {
+    // Zustand entries for today (may include in-flight + optimistic).
+    const local = entries.filter((e) => e.createdAt >= todayStart);
+    // Keys already present locally — don't duplicate them from server.
+    const localServerGenIds = new Set(
+      local.map((e) => e.serverGenId).filter((x): x is number => typeof x === "number")
+    );
+
+    // Server entries that are NOT represented by a local Zustand row.
+    // These are cross-device completions (or rows from a reload where
+    // the optimistic local entry was not persisted).
+    const remote: HistoryEntry[] = [];
+    for (const gen of serverToday as ServerGeneration[]) {
+      if (localServerGenIds.has(gen.id)) continue;
+      const firstImage = gen.outputs.find((o) =>
+        o.content_type.startsWith("image/")
+      );
+      if (!firstImage) continue;
+      const data = parsePromptData(gen.prompt_data);
+      const base = firstImage.filepath.replace(/\.[^.]+$/, "");
+      const thumbUrl = `/api/history/image/${encodeURIComponent(`thumb_${base}.jpg`)}`;
+      const midUrl = `/api/history/image/${encodeURIComponent(`mid_${base}.jpg`)}`;
+      const fullUrl = `/api/history/image/${encodeURIComponent(firstImage.filepath)}`;
+      const adapted = serverGenToHistoryEntry(gen, data, midUrl);
+      // The adapter uses `fullSrc` as `outputUrl`. Add preview/original
+      // so Output-area's existing preview/originalUrl reads work the
+      // same way they do for Zustand entries.
+      remote.push({
+        ...adapted,
+        previewUrl: midUrl,
+        originalUrl: fullUrl,
+        outputUrl: midUrl,
+      });
+      // Suppress unused var warning for thumbUrl (not currently
+      // surfaced to OutputArea — sidebar preloader handles it).
+      void thumbUrl;
+    }
+
+    // Merge and sort desc by createdAt. Cap at 10.
+    const merged = [...local, ...remote].sort(
+      (a, b) => b.createdAt - a.createdAt
+    );
+    return merged.slice(0, 10);
+  }, [entries, todayStart, serverToday]);
 
   const hasAny = todayEntries.length > 0;
 
