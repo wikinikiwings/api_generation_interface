@@ -33,7 +33,11 @@ FROM node:${NODE_VERSION} AS deps
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 COPY --from=source /src/app/package.json /src/app/package-lock.json ./
-RUN npm ci
+# npm install вместо npm ci: lock-файл, сгенерированный на Windows, не содержит
+# linuxmusl-вариантов sharp (@emnapi/*), и npm ci на Alpine падает. npm install
+# доразрешает платформенные optional-deps прямо в контейнере. Теряется строгая
+# детерминированность, но образ собирается кросс-платформенно.
+RUN npm install --no-audit --no-fund
 
 # ---------- 3. builder: собираем Next.js standalone ----------
 FROM node:${NODE_VERSION} AS builder
