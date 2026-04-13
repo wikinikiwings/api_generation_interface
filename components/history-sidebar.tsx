@@ -37,10 +37,18 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
     to: new Date(),
   }));
 
-  const range = React.useMemo(
-    () => ({ from: dateRange.from, to: dateRange.to }),
-    [dateRange.from, dateRange.to]
-  );
+  // Normalize the range to whole-day boundaries: "from" as start-of-day,
+  // "to" as end-of-day. Without this, `to: new Date()` is the moment of
+  // sidebar mount and any entry generated AFTER mount (createdAt > to)
+  // gets filtered out — a freshly generated image wouldn't appear in
+  // Sidebar until manual reload.
+  const range = React.useMemo(() => {
+    const from = new Date(dateRange.from);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(dateRange.to);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  }, [dateRange.from, dateRange.to]);
 
   const {
     entries,
