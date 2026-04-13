@@ -183,6 +183,22 @@ export function updatePendingEntry(
   }));
 }
 
+/**
+ * General metadata patch — for fields that don't fit the pending lifecycle
+ * (status, taskId, error, executionTimeMs, outputSizeBytes, etc.).
+ *
+ * Cannot change `id` or `state`. State transitions go through deleteEntry,
+ * confirmPendingEntry, or rollback paths in store.ts.
+ */
+export function updateEntry(
+  id: string,
+  patch: Omit<Partial<HistoryEntry>, "id" | "state">
+): void {
+  useHistoryStore.setState((s) => ({
+    entries: s.entries.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+  }));
+}
+
 export function confirmPendingEntry(
   uuid: string,
   payload: {

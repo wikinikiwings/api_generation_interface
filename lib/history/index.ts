@@ -7,6 +7,7 @@ export {
   deleteEntry,
   addPendingEntry,
   updatePendingEntry,
+  updateEntry,
   confirmPendingEntry,
   markPendingError,
   setPendingControls,

@@ -7,25 +7,31 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, Label } from "@/components/ui/select";
 import { ImageDropzone, type DroppedImage } from "@/components/image-dropzone";
-import { useHistoryStore } from "@/stores/history-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { usePromptStore } from "@/stores/prompt-store";
 import { MODELS_META } from "@/lib/providers/models";
 import type { ModelId } from "@/lib/providers/types";
 import { useUser } from "@/app/providers/user-provider";
-import { triggerHistoryRefresh } from "@/components/history-sidebar";
 import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
 import { cacheBlob } from "@/lib/image-cache";
-import * as pendingHistory from "@/lib/pending-history";
+import {
+  addPendingEntry,
+  updateEntry,
+  updatePendingEntry,
+  confirmPendingEntry,
+  markPendingError,
+  setPendingControls,
+  deleteEntry,
+} from "@/lib/history";
 import type {
   AspectRatio,
   OutputFormat,
   Resolution,
-  HistoryEntry,
   ProviderId,
 } from "@/types/wavespeed";
+import type { NewPendingInput } from "@/lib/history";
 import type {
   GenerateSubmitResponse,
   GenerateStatusResponse,
@@ -155,8 +161,9 @@ export function GenerateForm() {
   // generation is currently running.
   const [activeCount, setActiveCount] = React.useState(0);
 
-  const addHistory = useHistoryStore((s) => s.add);
-  const updateHistory = useHistoryStore((s) => s.update);
+  // Local helpers that route to the unified history module.
+  const addHistory = (entry: NewPendingInput) => addPendingEntry(entry);
+  const updateHistory = updateEntry;
 
   /**
    * Poll /api/generate/status/:id?provider=... every POLL_INTERVAL until
@@ -222,7 +229,6 @@ export function GenerateForm() {
         console.warn("[history] skip POST: no username");
         return;
       }
-      const uploadUuid = uuid();
 
       const hasImages = images.length > 0;
       const workflowName = `wavespeed:${activeProvider}/${selectedModel}/${
@@ -244,35 +250,7 @@ export function GenerateForm() {
 
       const uploadAbort = new AbortController();
 
-      // Push a SKELETON pending entry immediately — no blob URLs yet,
-      // but the sidebar card renders a placeholder so the user sees
-      // progress instantly, before any fetch or encode runs.
-      pendingHistory.addPending({
-        pending: true,
-        uuid: uploadUuid,
-        // Blob URLs omitted — fill in progressively below.
-        id: -1,
-        username,
-        workflow_name: workflowName,
-        prompt_data: JSON.stringify(promptPayload),
-        execution_time_seconds: executionTimeMs / 1000,
-        created_at: new Date().toISOString(),
-        status: "completed",
-        outputs: [
-          {
-            id: -1,
-            generation_id: -1,
-            filename: originalFilename,
-            filepath: `${uploadUuid}.${originalFilename.split(".").pop() || "png"}`,
-            content_type: `image/${outputFormat}`,
-            size: 0,
-          },
-        ],
-        abort: () => uploadAbort.abort(),
-      });
-
-      // Track blob URLs so we can register them with the zustand entry
-      // once generated (for Output panel cleanup on dismissal).
+      // Track blob URLs so we can register them with the entry once generated.
       let thumbBlobUrl: string | undefined;
       let midBlobUrl: string | undefined;
       let fullBlobUrl: string | undefined;
@@ -281,33 +259,29 @@ export function GenerateForm() {
         variants = await createImageVariants(outputUrl, {
           onFullReady: (blob) => {
             fullBlobUrl = URL.createObjectURL(blob);
-            pendingHistory.updatePending(uploadUuid, { fullBlobUrl });
+            updatePendingEntry(historyId, { originalUrl: fullBlobUrl });
           },
           onThumbReady: (blob) => {
             thumbBlobUrl = URL.createObjectURL(blob);
-            pendingHistory.updatePending(uploadUuid, { thumbBlobUrl });
+            updatePendingEntry(historyId, { thumbUrl: thumbBlobUrl });
           },
           onMidReady: (blob) => {
             midBlobUrl = URL.createObjectURL(blob);
-            pendingHistory.updatePending(uploadUuid, { midBlobUrl });
+            updatePendingEntry(historyId, {
+              outputUrl: midBlobUrl,
+              previewUrl: midBlobUrl,
+            });
           },
         });
       } catch (e) {
         console.error("[history] variant generation failed:", e);
         toast.error("Could not prepare thumbnail");
-        pendingHistory.removePending(uploadUuid);
+        await deleteEntry(historyId);
         return;
       }
 
-      // All variants ready — update the zustand entry with blob URLs
-      // so the Output panel also uses the lightweight variants and so
-      // the blob URLs get revoked when the Output card is dismissed.
-      updateHistory(historyId, {
-        previewUrl: midBlobUrl,
-        originalUrl: fullBlobUrl,
-        outputUrl: midBlobUrl,
-        thumbUrl: thumbBlobUrl,
-        confirmed: false,
+      // All variants ready — record the union of blob URLs for revoke-on-remove.
+      updatePendingEntry(historyId, {
         localBlobUrls: [thumbBlobUrl, midBlobUrl, fullBlobUrl].filter(
           (u): u is string => Boolean(u)
         ),
@@ -315,7 +289,7 @@ export function GenerateForm() {
 
       const doUpload = () =>
         uploadHistoryEntry({
-          uuid: uploadUuid,
+          uuid: historyId,
           username,
           workflowName,
           promptData: promptPayload,
@@ -330,40 +304,36 @@ export function GenerateForm() {
         });
 
       const retry = () => {
-        pendingHistory.clearError(uploadUuid);
+        updateEntry(historyId, { uploadError: null, error: null });
         doUpload().then(
           (res) => {
-            // Pre-populate the image-cache with the exact bytes we already
-            // have on the client. Later clicks on this entry render from
-            // memory — no round-trip, works even with DevTools "Disable
-            // cache" on.
             cacheBlob(res.thumbUrl, variants.thumb);
             cacheBlob(res.midUrl, variants.mid);
             cacheBlob(res.fullUrl, variants.full);
-            pendingHistory.confirmPending(uploadUuid);
-            updateHistory(historyId, {
+            confirmPendingEntry(historyId, {
               serverGenId: res.serverGenId,
-              previewUrl: res.midUrl,
-              originalUrl: res.fullUrl,
-              outputUrl: res.midUrl,
-              thumbUrl: res.thumbUrl,
-              confirmed: true,
-              localBlobUrls: undefined,
+              serverUrls: {
+                thumb: res.thumbUrl,
+                mid: res.midUrl,
+                full: res.fullUrl,
+              },
             });
-            triggerHistoryRefresh();
           },
           (e: Error) => {
             if (e instanceof DOMException && e.name === "AbortError") {
-              useHistoryStore.getState().remove(historyId);
+              void deleteEntry(historyId);
               return;
             }
-            pendingHistory.markError(uploadUuid, e.message);
+            markPendingError(historyId, e.message);
           }
         );
       };
 
-      // Now that retry closure exists, wire it into the pending entry.
-      pendingHistory.updatePending(uploadUuid, { retry });
+      // Wire abort + retry callbacks to the pending entry.
+      setPendingControls(historyId, {
+        retry,
+        abort: () => uploadAbort.abort(),
+      });
 
       try {
         let res;
@@ -373,7 +343,7 @@ export function GenerateForm() {
           if (innerErr instanceof UploadError && innerErr.status === 409) {
             console.error(
               "[history] UUID collision on",
-              uploadUuid,
+              historyId,
               "— retrying with fresh uuid"
             );
             const freshUuid = uuid();
@@ -395,31 +365,24 @@ export function GenerateForm() {
             throw innerErr;
           }
         }
-        // Pre-populate the image-cache with the exact bytes we already
-        // have on the client. Later clicks on this entry render from
-        // memory — no round-trip, works even with DevTools "Disable
-        // cache" on.
         cacheBlob(res.thumbUrl, variants.thumb);
         cacheBlob(res.midUrl, variants.mid);
         cacheBlob(res.fullUrl, variants.full);
-        pendingHistory.confirmPending(uploadUuid);
-        updateHistory(historyId, {
+        confirmPendingEntry(historyId, {
           serverGenId: res.serverGenId,
-          previewUrl: res.midUrl,
-          originalUrl: res.fullUrl,
-          outputUrl: res.midUrl,
-          thumbUrl: res.thumbUrl,
-          confirmed: true,
-          localBlobUrls: undefined,
+          serverUrls: {
+            thumb: res.thumbUrl,
+            mid: res.midUrl,
+            full: res.fullUrl,
+          },
         });
-        triggerHistoryRefresh();
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") {
-          useHistoryStore.getState().remove(historyId);
+          void deleteEntry(historyId);
           return;
         }
         const msg = e instanceof Error ? e.message : "Upload failed";
-        pendingHistory.markError(uploadUuid, msg);
+        markPendingError(historyId, msg);
       }
     }
 
@@ -445,8 +408,8 @@ export function GenerateForm() {
       thumbnails = images.map((i) => i.dataUrl);
     }
 
-    const entry: HistoryEntry = {
-      id: historyId,
+    const entry: NewPendingInput = {
+      uuid: historyId,
       taskId: "",
       provider: activeProvider,
       model: getModelString(activeProvider, selectedModel, images.length > 0),
@@ -566,8 +529,7 @@ export function GenerateForm() {
         });
         // Brief delay so the user sees the status flicker, then drop the
         // card entirely. Cancelled generations don't go to server history.
-        const removeFn = useHistoryStore.getState().remove;
-        setTimeout(() => removeFn(historyId), 250);
+        setTimeout(() => void deleteEntry(historyId), 250);
         toast("Отменено");
       } else {
         updateHistory(historyId, {
