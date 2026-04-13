@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import type { HistoryEntry } from "@/types/wavespeed";
+import type { HistoryEntry } from "@/lib/history";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
 

@@ -5,23 +5,18 @@ import { Loader2, AlertCircle, History, ImageIcon, Trash2, X, Download, Copy } f
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ImageDialog } from "@/components/image-dialog";
-import { useHistoryStore } from "@/stores/history-store";
 import { usePromptStore } from "@/stores/prompt-store";
 import { cancelGeneration } from "@/components/generate-form";
 import { cn, copyToClipboard, startOfToday } from "@/lib/utils";
-import type { HistoryEntry } from "@/types/wavespeed";
 import { useUser } from "@/app/providers/user-provider";
-import { useHistory, extractUuid, broadcastHistoryRefresh, type ServerGeneration } from "@/hooks/use-history";
-import { useGenerationEvents } from "@/hooks/use-generation-events";
-import { parsePromptData, serverGenToHistoryEntry } from "@/lib/server-gen-adapter";
 import {
-  subscribe as subscribePending,
-  getAll as getAllPending,
-} from "@/lib/pending-history";
+  useHistoryEntries,
+  useGenerationEvents,
+  deleteEntry,
+  type HistoryEntry,
+} from "@/lib/history";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
-import { markGenerationDeleted } from "@/lib/history-deletions";
-import { debugHistory } from "@/lib/history-debug";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -29,166 +24,49 @@ export interface OutputAreaProps {
 }
 
 export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
-  const entries = useHistoryStore((s) => s.entries);
-  const remove = useHistoryStore((s) => s.remove);
   const [mounted, setMounted] = React.useState(false);
-
   React.useEffect(() => {
     setMounted(true);
   }, []);
 
   const { username } = useUser();
-  // Fetch today's server-backed generations for this username. This
-  // picks up completed rows from other devices. The endpoint filters
-  // by date using ISO strings; we pass start/end of the local "today".
-  const todayDateRange = React.useMemo(() => {
-    const now = new Date();
-    const start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(now);
-    end.setHours(23, 59, 59, 999);
-    return { startDate: start, endDate: end };
-  }, []);
-  const { items: serverToday } = useHistory({
-    username,
-    startDate: todayDateRange.startDate,
-    endDate: todayDateRange.endDate,
-  });
+
   // Subscribe to server-pushed history events for near-real-time
-  // cross-device sync. No-op when username is null.
+  // cross-device sync. No-op when username is null. Single mount point
+  // for the whole app — nested mounts would open N EventSources.
   useGenerationEvents(username);
 
-  // Pending uploads on THIS device. Used below to suppress the race
-  // window where the SSE `generation.created` event arrives before
-  // the POST response has set `serverGenId` on the local Zustand
-  // entry — without this, the same generation briefly renders twice
-  // (local blob-URL card + server mid-URL card).
-  const pending = React.useSyncExternalStore(
-    subscribePending,
-    getAllPending,
-    getAllPending
-  );
-
-  // Show today's entries (newest first), capped at the last 10. The cap
-  // keeps the Output strip short and predictable even after a long
-  // generation session, while still respecting the "only today" boundary
-  // — nothing from yesterday ever leaks in.
+  // Today's entries from the unified store. Pending + live + deleting
+  // are pre-filtered; REMOVED is excluded by default.
   const todayStart = React.useMemo(() => startOfToday(), []);
+  const todayRange = React.useMemo(() => {
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    return { from: new Date(todayStart), to: end };
+  }, [todayStart]);
 
-  const todayEntries = React.useMemo(() => {
-    // Zustand entries for today (may include in-flight + optimistic).
-    const local = entries.filter((e) => e.createdAt >= todayStart);
-    // Keys already present locally — don't duplicate them from server.
-    const localServerGenIds = new Set(
-      local.map((e) => e.serverGenId).filter((x): x is number => typeof x === "number")
-    );
-    // Uuids of uploads still in flight from THIS device. Covers the
-    // race window before `serverGenId` lands on the Zustand entry.
-    const pendingUuids = new Set(pending.map((p) => p.uuid.toLowerCase()));
+  const { entries, isLoading } = useHistoryEntries({
+    username,
+    range: todayRange,
+  });
 
-    // Server entries that are NOT represented by a local Zustand row.
-    // These are cross-device completions (or rows from a reload where
-    // the optimistic local entry was not persisted). `serverToday`
-    // already has cross-surface-deleted rows filtered out at the
-    // useHistory source — no need to re-filter here.
-    const remote: HistoryEntry[] = [];
-    for (const gen of serverToday as ServerGeneration[]) {
-      if (localServerGenIds.has(gen.id)) continue;
-      const firstImage = gen.outputs.find((o) =>
-        o.content_type.startsWith("image/")
-      );
-      if (!firstImage) continue;
-      const genUuid = extractUuid(firstImage.filepath);
-      if (genUuid && pendingUuids.has(genUuid)) continue;
-      const data = parsePromptData(gen.prompt_data);
-      const base = firstImage.filepath.replace(/\.[^.]+$/, "");
-      const thumbUrl = `/api/history/image/${encodeURIComponent(`thumb_${base}.jpg`)}`;
-      const midUrl = `/api/history/image/${encodeURIComponent(`mid_${base}.jpg`)}`;
-      const fullUrl = `/api/history/image/${encodeURIComponent(firstImage.filepath)}`;
-      const adapted = serverGenToHistoryEntry(gen, data, midUrl);
-      // The adapter uses `fullSrc` as `outputUrl`. Add preview/original
-      // so Output-area's existing preview/originalUrl reads work the
-      // same way they do for Zustand entries.
-      remote.push({
-        ...adapted,
-        previewUrl: midUrl,
-        originalUrl: fullUrl,
-        outputUrl: midUrl,
-        thumbUrl,
-      });
-    }
+  // Cap at the last 10 entries — keeps the Output strip short and
+  // predictable even after a long session, while staying within "today".
+  const todayEntries = React.useMemo(() => entries.slice(0, 10), [entries]);
 
-    // Merge and sort desc by createdAt. Cap at 10.
-    const merged = [...local, ...remote].sort(
-      (a, b) => b.createdAt - a.createdAt
-    );
-    return merged.slice(0, 10);
-  }, [entries, todayStart, serverToday, pending]);
-
-  // Trash handler for Output cards. Two categories:
-  //   1) Local-only entry (no serverGenId — POST failed or legacy row):
-  //      silent Zustand dismiss, no confirm, no network. Such a row
-  //      is not in the server DB, so symmetry with History is trivial
-  //      (History never rendered it either).
-  //   2) Server-backed entry (has serverGenId — either a local entry
-  //      that reached the server, or a remote serverToday row): confirm,
-  //      DELETE /api/history, toast. Locally we ALSO remove from Zustand
-  //      immediately on success, rather than relying solely on the SSE
-  //      `generation.deleted` event round-trip — in dev mode that event
-  //      can be lost to HMR-induced subscriber-map resets, which leaves
-  //      the card stranded. SSE still runs for cross-tab / cross-device
-  //      cleanup; our local remove-by-id is idempotent so the duplicate
-  //      removal is harmless.
-  const handleRemove = React.useCallback(
-    async (entry: HistoryEntry) => {
-      if (typeof entry.serverGenId !== "number") {
-        remove(entry.id);
-        return;
-      }
-      if (!username) return;
-      if (!confirm("Удалить эту запись из истории?")) return;
-      const serverGenId = entry.serverGenId;
-      debugHistory("output.delete.click", {
-        localId: entry.id,
-        serverGenId,
-        createdAt: entry.createdAt,
-      });
-
-      // Optimistic UI — hide across all surfaces BEFORE awaiting the
-      // DELETE round-trip. Three synchronous signals:
-      //   1. Zustand.remove — Output strip drops the local entry now.
-      //   2. markGenerationDeleted — History sidebar filters by the
-      //      cross-surface deleted-ids set and hides immediately.
-      //   3. broadcastHistoryRefresh — queues the sidebar refetch to
-      //      reconcile with authoritative server state once available.
-      // SSE still fires for cross-tab / cross-device cleanup; idempotent.
-      remove(entry.id);
-      markGenerationDeleted(serverGenId);
-      broadcastHistoryRefresh();
-
-      try {
-        const res = await fetch(
-          `/api/history?id=${serverGenId}&username=${encodeURIComponent(username)}`,
-          { method: "DELETE" }
-        );
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        debugHistory("output.delete.server.ok", { serverGenId });
-        toast.success("Удалено");
-      } catch (e) {
-        // UI already hid the entry. On server failure we surface a toast
-        // rather than resurrecting — reload will re-fetch authoritative
-        // state if the user needs to see the row reappear.
-        debugHistory("output.delete.server.error", {
-          serverGenId,
-          message: e instanceof Error ? e.message : String(e),
-        });
-        toast.error(e instanceof Error ? e.message : "Delete failed");
-      }
-    },
-    [remove, username]
-  );
+  // Single removal path — covers local-only, server-backed, pending,
+  // and cross-device entries. Idempotent. State machine handles the
+  // animation hook + rollback on failure.
+  const handleRemove = React.useCallback(async (entry: HistoryEntry) => {
+    if (!confirm("Удалить эту запись из истории?")) return;
+    await deleteEntry(entry.id);
+  }, []);
 
   const hasAny = todayEntries.length > 0;
+  // Show skeleton tiles only during the very first hydration (no entries
+  // yet AND a fetch is in flight). Avoids flicker between EmptyState and
+  // populated grid on cold reload.
+  const showSkeleton = isLoading && !hasAny;
 
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden rounded-lg border border-border bg-muted/30">
@@ -218,7 +96,16 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 pt-14">
-        {!mounted ? null : !hasAny ? (
+        {!mounted ? null : showSkeleton ? (
+          <div className="flex flex-wrap gap-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="h-64 w-64 animate-pulse rounded-md bg-muted/60"
+              />
+            ))}
+          </div>
+        ) : !hasAny ? (
           <EmptyState />
         ) : (
           <div className="flex flex-wrap gap-4">
