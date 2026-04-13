@@ -299,7 +299,11 @@ function EntryCard({
   ) : null;
 
   return (
-    <div className="flex w-full flex-col items-center">
+    <div
+      data-history-card
+      data-state={entry.state}
+      className="flex w-full flex-col items-center"
+    >
       <div className="mb-2">
         {thumbJsx ? (
           <ImageDialog

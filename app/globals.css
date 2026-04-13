@@ -189,3 +189,24 @@
     animation: none;
   }
 }
+
+/*
+ * History entry deletion fade-out.
+ * ANIMATION_HOLD_MS in lib/history/mutations.ts keeps the entry in
+ * state="deleting" for 200ms before markRemoved evicts it. During that
+ * window the card visibly fades out. Consumers attach
+ * `data-history-card data-state={entry.state}` to the card root.
+ */
+[data-history-card][data-state="deleting"] {
+  opacity: 0;
+  transform: scale(0.96);
+  pointer-events: none;
+  transition: opacity 200ms ease-out, transform 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-history-card][data-state="deleting"] {
+    transform: none;
+    transition: opacity 150ms linear;
+  }
+}

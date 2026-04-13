@@ -302,7 +302,11 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
   // ImageDialog still wraps ONLY the tile so clicking the caption /
   // Copy button doesn't open the zoom dialog.
   const wrapped = (
-    <div className="flex w-[272px] flex-col gap-2 rounded-lg border border-border bg-card p-2 shadow-sm transition-shadow hover:shadow-md">
+    <div
+      data-history-card
+      data-state={entry.state}
+      className="flex w-[272px] flex-col gap-2 rounded-lg border border-border bg-card p-2 shadow-sm transition-shadow hover:shadow-md"
+    >
       {isDone ? (
         <ImageDialog
           entry={entry}
