@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import { extractUuid } from "@/lib/history/util";
+import { extractUuid, parseServerDate } from "@/lib/history/util";
 import { debugHistory } from "@/lib/history/debug";
 import type { EntryState, HistoryEntry, ServerGeneration } from "@/lib/history/types";
 
@@ -73,7 +73,7 @@ export function applyServerRow(row: ServerGeneration): void {
               serverGenId: row.id,
               state: "live" as const,
               confirmed: true,
-              createdAt: Date.parse(row.created_at),
+              createdAt: parseServerDate(row.created_at),
               workflowName: fromServer.workflowName,
               prompt: fromServer.prompt,
             }
@@ -130,7 +130,7 @@ function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEntry {
     prompt,
     provider: "wavespeed",
     workflowName,
-    createdAt: Date.parse(row.created_at),
+    createdAt: parseServerDate(row.created_at),
     status: "completed",
     error: null,
     originalUrl: filename ? `/api/history/image/${filename}` : undefined,
@@ -158,7 +158,7 @@ export function applyServerList(rows: ServerGeneration[], opts: ApplyListOpts): 
   if (rows.length === 0) return;
   if (opts.offset && opts.offset > 0) return;
 
-  const oldest = Math.min(...rows.map((r) => Date.parse(r.created_at)));
+  const oldest = Math.min(...rows.map((r) => parseServerDate(r.created_at)));
   const state = useHistoryStore.getState();
   const toRemove: string[] = [];
   for (const e of state.entries) {

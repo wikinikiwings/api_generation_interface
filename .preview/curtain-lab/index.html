@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Curtain reveal — lab (progressive)</title>
+<style>
+  /* ------------- prod classes (copy of globals.css .blur-up-*) ------------- */
+  @property --reveal {
+    syntax: "<percentage>";
+    inherits: false;
+    initial-value: -25%;
+  }
+  @keyframes blur-up-breathe {
+    0%, 100% { filter: blur(32px) saturate(1.2) brightness(0.95); }
+    50%      { filter: blur(30px) saturate(1.4) brightness(1.05); }
+  }
+  @keyframes blur-up-curtain {
+    from { --reveal: -25%; }
+    to   { --reveal: 125%; }
+  }
+
+  /* ------------- lab chrome ------------- */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #e8e8e8; background: #0e0e10; min-height: 100vh;
+    padding: 20px 28px 80px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+  .hint { color: #8a8a92; margin: 0 0 20px; font-size: 12px; }
+
+  .lab { display: grid; grid-template-columns: 320px 1fr; gap: 24px; align-items: start; }
+
+  .panel {
+    background: #16161a; border: 1px solid #26262c; border-radius: 10px;
+    padding: 14px 16px; position: sticky; top: 16px;
+  }
+  .panel h2 { font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #a6a6ae; margin: 0 0 8px; }
+  .row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 11px; }
+  .row label { display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; color: #c5c5cc; }
+  .row label .val { font-variant-numeric: tabular-nums; color: #fff; }
+  input[type="range"] { width: 100%; accent-color: #7c7cff; }
+  select {
+    background: #0e0e10; color: #e8e8e8; border: 1px solid #2c2c34;
+    border-radius: 6px; padding: 5px 7px; font: inherit;
+  }
+  button {
+    background: #7c7cff; color: #0b0b0e; border: 0;
+    padding: 7px 12px; border-radius: 8px; font: inherit; font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary { background: #2c2c34; color: #e8e8e8; }
+  button:active { transform: translateY(1px); }
+  .btn-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+
+  .stage {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+  }
+  .tile { display: flex; flex-direction: column; gap: 8px; }
+  .tile .label {
+    display: flex; justify-content: space-between; align-items: center;
+    color: #c5c5cc; font-size: 12px;
+  }
+  .tile .label .title { color: #fff; font-weight: 600; }
+  .tile .label .sub { color: #8a8a92; font-size: 11px; }
+  .tile .frame {
+    width: 100%; aspect-ratio: 1 / 1; border-radius: 10px;
+    background: #0a0a0b; border: 1px solid #26262c; overflow: hidden;
+    position: relative;
+  }
+  .tile .frame canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  }
+
+  /* backdrop variants applied as inline background on .backdrop */
+  .backdrop { position: absolute; inset: 0; pointer-events: none; }
+
+  /* canvas layers */
+  .canvas-backdrop {
+    /* variant A: blurred duplicate of sharp */
+    filter: blur(32px) saturate(1.2) brightness(0.95);
+    transform: scale(1.15);
+    animation: blur-up-breathe 2.5s ease-in-out infinite;
+    transition: opacity 300ms linear;
+  }
+  .canvas-backdrop[data-mode="extrapolate"] {
+    /* variant E: heavier blur + no breathing — the haze must feel
+       like a natural extension of the current frontier row, not a
+       separate animated layer. Saturate boost compensates for the
+       hue flattening that happens when a 4-row strip is stretched
+       to full height and then blurred. */
+    filter: blur(var(--extrapolate-blur, 48px)) saturate(1.25);
+    transform: scale(1.05);
+    animation: none;
+  }
+  .canvas-sharp { /* default: no mask */ }
+
+  /* variant E: blur applied directly to the sharp canvas (no separate
+     overlay). `--time-blur` starts at max and ramps to 0 as the feather
+     descends. The frontier feather mask continues to clip the bottom
+     edge — because filter runs BEFORE mask-image in the render pipeline
+     when both are set on the same element, there's no bleed artefact
+     at the feather edge. */
+  .canvas-sharp[data-mode="frontier"] {
+    filter: blur(var(--time-blur, 0px));
+    transition: filter 200ms linear;
+  }
+  .canvas-sharp[data-mode="frontier"][data-reveal-state="done"] {
+    filter: blur(0px);
+  }
+
+  /* variant A only: curtain mask on sharp AFTER load complete */
+  .canvas-sharp[data-mode="curtain"] {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      black 0%,
+      black calc(var(--reveal, -25%)),
+      transparent calc(var(--reveal, -25%) + var(--feather-pct, 22%)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      black 0%,
+      black calc(var(--reveal, -25%)),
+      transparent calc(var(--reveal, -25%) + var(--feather-pct, 22%)),
+      transparent 100%
+    );
+  }
+  .canvas-sharp[data-mode="curtain"][data-reveal-state="playing"] {
+    animation: blur-up-curtain var(--reveal-ms, 700ms) cubic-bezier(0.4,0,0.2,1) forwards;
+  }
+  .canvas-sharp[data-mode="curtain"][data-reveal-state="done"] { --reveal: 125%; animation: none; }
+
+  /* variants C/D: frontier feather — feather stays AT the bottom of the
+     loaded region. Controlled by JS via --frontier (0..100%). */
+  .canvas-sharp[data-mode="frontier"] {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      black 0%,
+      black calc(var(--frontier, 0%) - var(--feather-pct, 22%)),
+      transparent var(--frontier, 0%),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      black 0%,
+      black calc(var(--frontier, 0%) - var(--feather-pct, 22%)),
+      transparent var(--frontier, 0%),
+      transparent 100%
+    );
+  }
+
+  /* when A's backdrop disappears */
+  .tile .frame[data-reveal-state="done"] .canvas-backdrop {
+    opacity: 0; animation-play-state: paused;
+  }
+
+  .meta {
+    display: flex; gap: 8px; align-items: center; font-size: 11px;
+    color: #8a8a92;
+  }
+  .badge {
+    display: inline-block; padding: 2px 6px; border-radius: 4px;
+    background: #26262c; color: #c5c5cc; font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .badge[data-state="loading"] { color: #ffcc66; }
+  .badge[data-state="curtain"] { color: #7c7cff; }
+  .badge[data-state="done"]    { color: #8aff9a; }
+
+  .log {
+    margin-top: 14px; background: #0a0a0c; border: 1px solid #26262c;
+    border-radius: 8px; padding: 8px 10px; color: #a6a6ae;
+    font: 10px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    max-height: 150px; overflow: auto; white-space: pre-wrap;
+  }
+</style>
+</head>
+<body>
+
+<h1>Curtain reveal — lab (progressive load sim)</h1>
+<p class="hint">
+  Симулирую прогрессивную загрузку на canvas (строки сверху вниз за «медленный» интервал).
+  Четыре варианта обработки бок-о-бок. Под каждым — текущее состояние и замеренный load frontier.
+</p>
+
+<div class="lab">
+  <div class="panel">
+    <h2>Сетевая эмуляция</h2>
+    <div class="row">
+      <label>load duration (симуляция slow net) <span class="val" id="lbl-load">5000 ms</span></label>
+      <input id="ctl-load" type="range" min="500" max="15000" step="100" value="5000" />
+    </div>
+
+    <h2>Общие параметры</h2>
+    <div class="row">
+      <label>feather (ширина края) <span class="val" id="lbl-feather">22 %</span></label>
+      <input id="ctl-feather" type="range" min="0" max="60" step="1" value="22" />
+    </div>
+    <div class="row">
+      <label>curtain (revealMs, вариант A) <span class="val" id="lbl-reveal">700 ms</span></label>
+      <input id="ctl-reveal" type="range" min="100" max="3000" step="50" value="700" />
+    </div>
+
+    <h2>Вариант E (strip)</h2>
+    <div class="row">
+      <label>ширина strip (src rows) <span class="val" id="lbl-strip">4</span></label>
+      <input id="ctl-strip" type="range" min="1" max="32" step="1" value="4" />
+    </div>
+    <div class="row">
+      <label>blur подложки E <span class="val" id="lbl-eblur">48 px</span></label>
+      <input id="ctl-eblur" type="range" min="8" max="120" step="1" value="48" />
+    </div>
+    <div class="row">
+      <label>max blur (при frontier=0%) <span class="val" id="lbl-tblur">32 px</span></label>
+      <input id="ctl-tblur" type="range" min="0" max="80" step="1" value="32" />
+    </div>
+    <div class="row">
+      <label>ramp curve (γ) <span class="val" id="lbl-tbop">70 %</span></label>
+      <input id="ctl-tbop" type="range" min="0" max="100" step="1" value="70" />
+    </div>
+
+    <h2>Сеть: bursty arrival</h2>
+    <div class="row">
+      <label>
+        <span>bursty chunks (вместо линейной)</span>
+        <input id="ctl-burst" type="checkbox" checked />
+      </label>
+    </div>
+    <div class="row">
+      <label>количество чанков <span class="val" id="lbl-bcount">8</span></label>
+      <input id="ctl-bcount" type="range" min="2" max="30" step="1" value="8" />
+    </div>
+    <div class="row">
+      <label>smoothing τ (frontier tween) <span class="val" id="lbl-smooth">400 ms</span></label>
+      <input id="ctl-smooth" type="range" min="0" max="1500" step="25" value="400" />
+    </div>
+
+    <h2>Сцена</h2>
+    <div class="row">
+      <label>изображение</label>
+      <select id="ctl-scene">
+        <option value="sunset" selected>sunset (тёплые верх/холодные низ)</option>
+        <option value="forest">forest (почти однотон)</option>
+        <option value="portrait">portrait (высокий контраст)</option>
+        <option value="seascape">seascape (два пояса)</option>
+      </select>
+    </div>
+
+    <div class="btn-row">
+      <button id="btn-replay">▶ replay all</button>
+      <button id="btn-stop" class="secondary">stop</button>
+      <button id="btn-dump" class="secondary">dump settings</button>
+    </div>
+
+    <div class="log" id="log"></div>
+  </div>
+
+  <div>
+    <div class="stage" id="stage"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ==============================================================
+  // Procedural scenes (so canvas pixel reads work without CORS).
+  // Each returns a canvas of size w×h already drawn.
+  // ==============================================================
+  function makeScene(kind, w, h) {
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d");
+
+    if (kind === "sunset") {
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0.00, "#ffb36b");
+      g.addColorStop(0.35, "#ff6b6b");
+      g.addColorStop(0.60, "#7a3b62");
+      g.addColorStop(1.00, "#1e2240");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      // sun
+      ctx.fillStyle = "#fff3a0";
+      ctx.beginPath(); ctx.arc(w*0.68, h*0.42, w*0.07, 0, Math.PI*2); ctx.fill();
+      // mountain silhouette
+      ctx.fillStyle = "#141628";
+      ctx.beginPath();
+      ctx.moveTo(0, h*0.78);
+      ctx.lineTo(w*0.18, h*0.58);
+      ctx.lineTo(w*0.32, h*0.72);
+      ctx.lineTo(w*0.52, h*0.50);
+      ctx.lineTo(w*0.72, h*0.66);
+      ctx.lineTo(w*0.88, h*0.55);
+      ctx.lineTo(w, h*0.70);
+      ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath(); ctx.fill();
+      // water reflection
+      const gw = ctx.createLinearGradient(0, h*0.8, 0, h);
+      gw.addColorStop(0, "#2a3560"); gw.addColorStop(1, "#0b0f22");
+      ctx.fillStyle = gw; ctx.fillRect(0, h*0.8, w, h*0.2);
+    }
+    else if (kind === "forest") {
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, "#1f3b24"); g.addColorStop(1, "#0e2015");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+      // trunks
+      ctx.fillStyle = "#2a1f16";
+      for (let i = 0; i < 9; i++) {
+        const x = (i + 0.5) * w / 9 + Math.sin(i) * w * 0.02;
+        ctx.fillRect(x - 6, 0, 12, h);
+      }
+      // dappled light
+      ctx.fillStyle = "rgba(192, 230, 150, 0.18)";
+      for (let i = 0; i < 20; i++) {
+        ctx.beginPath();
+        ctx.arc(Math.random()*w, Math.random()*h, 6 + Math.random()*10, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    else if (kind === "portrait") {
+      ctx.fillStyle = "#0a0a0c"; ctx.fillRect(0, 0, w, h);
+      // face oval
+      const cx = w/2, cy = h*0.48;
+      const rad = ctx.createRadialGradient(cx, cy, 10, cx, cy, w*0.4);
+      rad.addColorStop(0, "#f4c6a5");
+      rad.addColorStop(0.45, "#c9896b");
+      rad.addColorStop(0.85, "#3a1f14");
+      rad.addColorStop(1, "#0a0a0c");
+      ctx.fillStyle = rad;
+      ctx.beginPath(); ctx.ellipse(cx, cy, w*0.28, h*0.38, 0, 0, Math.PI*2); ctx.fill();
+      // shoulders
+      ctx.fillStyle = "#1b1b22";
+      ctx.beginPath();
+      ctx.ellipse(cx, h*1.05, w*0.55, h*0.35, 0, 0, Math.PI*2); ctx.fill();
+    }
+    else if (kind === "seascape") {
+      const sky = ctx.createLinearGradient(0, 0, 0, h*0.55);
+      sky.addColorStop(0, "#6fb5d9"); sky.addColorStop(1, "#cfe6f0");
+      ctx.fillStyle = sky; ctx.fillRect(0, 0, w, h*0.55);
+      const sea = ctx.createLinearGradient(0, h*0.55, 0, h);
+      sea.addColorStop(0, "#1f4d63"); sea.addColorStop(1, "#0a1e2a");
+      ctx.fillStyle = sea; ctx.fillRect(0, h*0.55, w, h*0.45);
+      // horizon highlight
+      ctx.fillStyle = "rgba(255,240,180,0.55)";
+      ctx.fillRect(0, h*0.545, w, 2);
+    }
+    return cv;
+  }
+
+  function analyze(cv) {
+    const ctx = cv.getContext("2d");
+    const w = cv.width, h = cv.height;
+    const bandH = Math.max(4, Math.round(h * 0.08));
+    const top = avgOf(ctx.getImageData(0, 0, w, bandH).data);
+    const bottom = avgOf(ctx.getImageData(0, h - bandH, w, bandH).data);
+    const fullStride = ctx.getImageData(0, 0, w, h).data;
+    return { avg: avgOf(fullStride), top, bottom };
+  }
+  function avgOf(rgba) {
+    let r = 0, g = 0, b = 0, n = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      r += rgba[i]; g += rgba[i+1]; b += rgba[i+2]; n++;
+    }
+    return [Math.round(r/n), Math.round(g/n), Math.round(b/n)];
+  }
+  const rgbStr = ([r,g,b]) => `rgb(${r} ${g} ${b})`;
+
+  // ==============================================================
+  // Tile definitions
+  // ==============================================================
+  const TILE_CFG = [
+    {
+      id: "A",
+      title: "A · prod (muted bg + blur backdrop + curtain)",
+      sub: "baseline: что ты видишь сейчас",
+      mode: "prod",
+    },
+    {
+      id: "D",
+      title: "D · top/bottom gradient (reference)",
+      sub: "эталон со знанием цветов — для сравнения",
+      mode: "gradient",
+    },
+    {
+      id: "E",
+      title: "E · extrapolated strip (твоя идея)",
+      sub: "последняя загруженная полоса пикселей, растянута вниз и размыта",
+      mode: "extrapolate",
+    },
+  ];
+
+  // State
+  const state = {
+    loadMs: 5000,
+    revealMs: 700,
+    featherPct: 22,
+    stripRows: 4,
+    extrapolateBlur: 48,
+    topBlur: 32,
+    topBlurOpacity: 70,  // 0..100
+    burstMode: true,
+    burstCount: 8,
+    smoothMs: 400,
+    scene: "sunset",
+    running: false,
+    abort: 0,
+  };
+
+  // Persistence ----------------------------------------------------------
+  const PERSIST_KEY = "curtain-lab-v1";
+  const PERSIST_FIELDS = [
+    "loadMs", "revealMs", "featherPct", "stripRows", "extrapolateBlur",
+    "topBlur", "topBlurOpacity", "burstMode", "burstCount", "smoothMs", "scene",
+  ];
+  function loadPersisted() {
+    try {
+      const raw = localStorage.getItem(PERSIST_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      PERSIST_FIELDS.forEach(k => { if (data[k] !== undefined) state[k] = data[k]; });
+      return true;
+    } catch { return false; }
+  }
+  function savePersisted() {
+    try {
+      const data = {};
+      PERSIST_FIELDS.forEach(k => { data[k] = state[k]; });
+      localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+    } catch {}
+  }
+  loadPersisted();
+
+  const log = (msg) => {
+    const el = document.getElementById("log");
+    const ts = new Date().toISOString().slice(11, 23);
+    el.textContent = `[${ts}] ${msg}\n` + el.textContent;
+    el.scrollTop = 0;
+  };
+
+  function makeTile(cfg) {
+    const wrap = document.createElement("div");
+    wrap.className = "tile";
+    wrap.innerHTML = `
+      <div class="label">
+        <span><span class="title">${cfg.title}</span></span>
+        <span class="badge" data-state="idle">idle</span>
+      </div>
+      <div class="sub hint">${cfg.sub}</div>
+      <div class="frame" data-reveal-state="idle">
+        <div class="backdrop"></div>
+        <canvas class="canvas-backdrop"></canvas>
+        <canvas class="canvas-sharp"></canvas>
+      </div>
+      <div class="meta">
+        <span>frontier <span class="fr">0%</span></span>
+        <span>· load <span class="ld">0ms</span></span>
+      </div>
+    `;
+    const frame     = wrap.querySelector(".frame");
+    const backdrop  = wrap.querySelector(".backdrop");
+    const cvBackdrop = wrap.querySelector(".canvas-backdrop");
+    const cvSharp   = wrap.querySelector(".canvas-sharp");
+    const badge     = wrap.querySelector(".badge");
+    const frSpan    = wrap.querySelector(".fr");
+    const ldSpan    = wrap.querySelector(".ld");
+    // backdrop canvas used by mode=prod (blurred dup) and mode=extrapolate (stretched strip)
+    cvBackdrop.style.display =
+      (cfg.mode === "prod" || cfg.mode === "extrapolate") ? "" : "none";
+    cvBackdrop.dataset.mode = cfg.mode; // so CSS can tune blur per mode
+    // sharp mode attr drives CSS masking
+    if (cfg.mode === "prod") cvSharp.dataset.mode = "curtain";
+    else if (cfg.mode === "avg") cvSharp.dataset.mode = "none";
+    else cvSharp.dataset.mode = "frontier"; // bottom / gradient / extrapolate
+    return { cfg, wrap, frame, backdrop, cvBackdrop, cvSharp, badge, frSpan, ldSpan };
+  }
+
+  const stage = document.getElementById("stage");
+  const tiles = TILE_CFG.map(cfg => {
+    const t = makeTile(cfg);
+    stage.appendChild(t.wrap);
+    return t;
+  });
+
+  function setBadge(tile, state) {
+    tile.badge.dataset.state = state;
+    tile.badge.textContent = state;
+  }
+
+  function sizeCanvasTo(el, width, height) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    el.width = Math.round(width * dpr);
+    el.height = Math.round(height * dpr);
+    return dpr;
+  }
+
+  function applyBackdrop(tile, source, metrics) {
+    const { mode } = tile.cfg;
+    if (mode === "prod") {
+      tile.backdrop.style.background = "rgba(255,255,255,0.04)"; // muted/30 analogue
+    } else if (mode === "avg") {
+      tile.backdrop.style.background = rgbStr(metrics.avg);
+    } else if (mode === "bottom") {
+      tile.backdrop.style.background = rgbStr(metrics.bottom);
+    } else if (mode === "gradient") {
+      tile.backdrop.style.background =
+        `linear-gradient(to bottom, ${rgbStr(metrics.top)} 0%, ${rgbStr(metrics.bottom)} 100%)`;
+    } else if (mode === "extrapolate") {
+      // Neutral dark behind the stretched-strip canvas. Visible only
+      // briefly at frontier=0 when no pixel has loaded yet.
+      tile.backdrop.style.background = "rgba(18,18,22,1)";
+    }
+  }
+
+  async function runTile(tile, source, metrics, token) {
+    const { mode } = tile.cfg;
+    const frame = tile.frame;
+    const cvSharp = tile.cvSharp;
+    const cvBackdrop = tile.cvBackdrop;
+    const ctxS = cvSharp.getContext("2d");
+    const ctxB = cvBackdrop.getContext("2d");
+
+    // reset
+    frame.dataset.revealState = "idle";
+    cvSharp.dataset.revealState = "idle";
+    cvSharp.style.removeProperty("--reveal-ms");
+    cvSharp.style.removeProperty("--frontier");
+    cvSharp.style.setProperty("--feather-pct", state.featherPct + "%");
+    // For variant E we'll overwrite --time-blur per tick; clear it for
+    // other modes so their sharp canvas stays crisp.
+    if (mode === "extrapolate") {
+      cvSharp.style.setProperty("--time-blur", state.topBlur + "px");
+    } else {
+      cvSharp.style.removeProperty("--time-blur");
+    }
+
+    // size canvases to frame
+    const rect = frame.getBoundingClientRect();
+    const W = Math.max(1, Math.round(rect.width));
+    const H = Math.max(1, Math.round(rect.height));
+    const dpr = sizeCanvasTo(cvSharp, W, H);
+    if (mode === "prod" || mode === "extrapolate") sizeCanvasTo(cvBackdrop, W, H);
+
+    ctxS.clearRect(0, 0, cvSharp.width, cvSharp.height);
+    if (mode === "prod" || mode === "extrapolate")
+      ctxB.clearRect(0, 0, cvBackdrop.width, cvBackdrop.height);
+
+    applyBackdrop(tile, source, metrics);
+
+    setBadge(tile, "loading");
+    tile.frSpan.textContent = "0%";
+    tile.ldSpan.textContent = "0ms";
+
+    // progressive row-by-row draw over loadMs
+    const loadMs = state.loadMs;
+    const t0 = performance.now();
+    const srcW = source.width, srcH = source.height;
+
+    // Bursty arrival: generate N chunks at roughly even intervals with
+    // jitter, each delivering a slice of bytes. rawP jumps in steps as
+    // chunks arrive; smoothedP tweens toward rawP (what's drawn visibly).
+    const chunks = state.burstMode ? genChunks(state.burstCount, loadMs) : null;
+    let smoothedP = 0;
+    let lastT = t0;
+
+    await new Promise((resolve) => {
+      const step = () => {
+        if (token !== state.abort) return resolve();  // superseded
+        const now = performance.now();
+        const elapsed = now - t0;
+        // rawP = what the "server" has delivered so far. Bursty: sum of
+        // chunks whose timestamp is past; else: pure linear.
+        let rawP;
+        if (chunks) {
+          rawP = 0;
+          for (const c of chunks) if (c.at <= elapsed) rawP += c.size;
+          rawP = Math.min(1, rawP);
+        } else {
+          rawP = Math.min(1, elapsed / loadMs);
+        }
+        // smoothedP chases rawP with exponential approach (time constant
+        // = state.smoothMs). dt in ms. alpha = 1 - e^(-dt/τ).
+        const dt = Math.max(0, now - lastT);
+        lastT = now;
+        if (state.smoothMs > 0) {
+          const alpha = 1 - Math.exp(-dt / Math.max(1, state.smoothMs));
+          smoothedP += (rawP - smoothedP) * alpha;
+        } else {
+          smoothedP = rawP;
+        }
+        // p used for the visible frontier / blur; rawP used for source
+        // pixels actually available in canvas.
+        const p = smoothedP;
+        const rowsSrc = Math.max(1, Math.floor(srcH * rawP));
+        const rowsDst = Math.max(1, Math.floor(cvSharp.height * rawP));
+
+        ctxS.clearRect(0, 0, cvSharp.width, cvSharp.height);
+        ctxS.drawImage(
+          source,
+          0, 0, srcW, rowsSrc,
+          0, 0, cvSharp.width, rowsDst
+        );
+        if (mode === "prod") {
+          ctxB.clearRect(0, 0, cvBackdrop.width, cvBackdrop.height);
+          ctxB.drawImage(
+            source,
+            0, 0, srcW, rowsSrc,
+            0, 0, cvBackdrop.width, rowsDst
+          );
+        }
+
+        if (mode === "extrapolate") {
+          // Strip anchor uses smoothedP, not rawP. Otherwise a TCP
+          // burst (rawP jumps 40%→60%) would yank the strip's source
+          // rows down by the same amount and the haze colour would
+          // flicker. smoothedP always ≤ rawP, so the sampled rows are
+          // guaranteed to be within the already-loaded region.
+          ctxB.clearRect(0, 0, cvBackdrop.width, cvBackdrop.height);
+          const stripBottom = Math.max(1, Math.floor(srcH * smoothedP));
+          const stripN = Math.max(1, Math.min(state.stripRows, stripBottom));
+          const stripY = Math.max(0, stripBottom - stripN);
+          ctxB.drawImage(
+            source,
+            0, stripY, srcW, stripN,
+            0, 0, cvBackdrop.width, cvBackdrop.height
+          );
+        }
+
+        // update frontier for variants C/D/E
+        if (mode === "bottom" || mode === "gradient" || mode === "extrapolate") {
+          const frontierPct = (p * 100).toFixed(2) + "%";
+          cvSharp.style.setProperty("--frontier", frontierPct);
+          if (mode === "extrapolate") {
+            // Blur strength on the sharp canvas scales inversely with
+            // load progress:
+            //   frontier 0%   → full blur (state.topBlur)
+            //   frontier 100% → 0 blur
+            // Gamma curve via state.topBlurOpacity (0..100): 70 ≈ linear,
+            // lower = blur clears fast, higher = blur lingers.
+            const gamma = 1 + (state.topBlurOpacity - 70) / 50;  // ~0.4..1.6
+            const scale = Math.pow(1 - p, Math.max(0.2, gamma));
+            const px = (state.topBlur * scale).toFixed(2);
+            cvSharp.style.setProperty("--time-blur", px + "px");
+          }
+        }
+
+        tile.frSpan.textContent = (p*100).toFixed(0) + "%";
+        tile.ldSpan.textContent = Math.round(elapsed) + "ms";
+
+        // Finish when BOTH the source is fully delivered AND smoothed
+        // frontier has caught up. Give up if too much time has passed
+        // beyond loadMs (5 smoothing time constants = close enough).
+        const settled = rawP >= 0.9999 && smoothedP >= 0.999;
+        const hardCap = elapsed > loadMs + state.smoothMs * 5 + 200;
+        if (settled || hardCap) {
+          smoothedP = 1;
+          resolve();
+        } else {
+          requestAnimationFrame(step);
+        }
+      };
+      requestAnimationFrame(step);
+    });
+
+    if (token !== state.abort) return;
+
+    // post-load behaviour
+    if (mode === "prod") {
+      // curtain phase
+      setBadge(tile, "curtain");
+      cvSharp.style.setProperty("--reveal-ms", state.revealMs + "ms");
+      cvSharp.dataset.revealState = "playing";
+      await delay(state.revealMs);
+      if (token !== state.abort) return;
+      cvSharp.dataset.revealState = "done";
+      frame.dataset.revealState = "done";
+      setBadge(tile, "done");
+    } else {
+      // bottom / gradient / avg / extrapolate: just mark done. For
+      // frontier variants the feather has fully slid off the bottom
+      // (frontier=100%) so the image is completely visible.
+      cvSharp.style.removeProperty("--frontier"); // lets CSS fall back to default state
+      cvSharp.style.setProperty("--time-blur", "0px"); // ensure blur fully clears
+      cvSharp.dataset.revealState = "done";
+      frame.dataset.revealState = "done";
+      setBadge(tile, "done");
+    }
+  }
+
+  const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // Bursty chunk generator — N chunks with jittered timestamps and
+  // sizes summing to 1.0. Mimics a TCP download where the server sends
+  // data in bursts with gaps in between.
+  function genChunks(n, totalMs) {
+    const out = [];
+    let sizeAcc = 0;
+    for (let i = 0; i < n; i++) {
+      // time: evenly spaced anchor + 40% jitter
+      const anchor = (i + 0.6) / n;
+      const jitter = (Math.random() - 0.5) * 0.8 / n;
+      const t = Math.max(1, Math.min(totalMs - 1, (anchor + jitter) * totalMs));
+      // size: uniform with variance; normalised after
+      const s = 0.5 + Math.random() * 1.0;
+      sizeAcc += s;
+      out.push({ at: t, size: s });
+    }
+    out.forEach(c => c.size = c.size / sizeAcc);
+    out.sort((a, b) => a.at - b.at);
+    return out;
+  }
+
+  // ==============================================================
+  // Replay orchestration
+  // ==============================================================
+  let sourceCanvas = null;
+  let metricsCache = null;
+
+  function prepareScene() {
+    sourceCanvas = makeScene(state.scene, 800, 800);
+    metricsCache = analyze(sourceCanvas);
+    log(`scene=${state.scene} avg=${rgbStr(metricsCache.avg)} top=${rgbStr(metricsCache.top)} bottom=${rgbStr(metricsCache.bottom)}`);
+  }
+
+  async function replayAll() {
+    state.abort++;
+    const token = state.abort;
+    if (!sourceCanvas) prepareScene();
+    log(`replay all · load=${state.loadMs}ms curtain=${state.revealMs}ms feather=${state.featherPct}%`);
+    await Promise.all(tiles.map(t => runTile(t, sourceCanvas, metricsCache, token)));
+    if (token === state.abort) log("done.");
+  }
+
+  // ==============================================================
+  // Controls
+  // ==============================================================
+  function bindRange(id, key, suffix) {
+    const el = document.getElementById(id);
+    const lbl = document.getElementById("lbl-" + id.replace("ctl-", ""));
+    // Initial value: if persisted state has it, push to input; else read input.
+    if (state[key] != null) el.value = String(state[key]);
+    const apply = () => {
+      state[key] = Number(el.value);
+      lbl.textContent = `${el.value} ${suffix}`;
+      savePersisted();
+    };
+    el.addEventListener("input", apply);
+    apply();
+  }
+  bindRange("ctl-load", "loadMs", "ms");
+  bindRange("ctl-reveal", "revealMs", "ms");
+  bindRange("ctl-feather", "featherPct", "%");
+  bindRange("ctl-strip", "stripRows", "");
+  bindRange("ctl-eblur", "extrapolateBlur", "px");
+  bindRange("ctl-tblur", "topBlur", "px");
+  bindRange("ctl-tbop",  "topBlurOpacity", "%");
+  bindRange("ctl-bcount", "burstCount", "");
+  bindRange("ctl-smooth", "smoothMs", "ms");
+
+  // bursty on/off
+  const ctlBurst = document.getElementById("ctl-burst");
+  ctlBurst.checked = !!state.burstMode;
+  ctlBurst.addEventListener("change", () => {
+    state.burstMode = ctlBurst.checked;
+    savePersisted();
+  });
+
+  // scene select: respect persisted value
+  const ctlScene = document.getElementById("ctl-scene");
+  if (state.scene) ctlScene.value = state.scene;
+
+  // push live CSS values without forcing a replay
+  const applyExtrapolateBlur = () => {
+    document.querySelectorAll('.canvas-backdrop[data-mode="extrapolate"]').forEach(el => {
+      el.style.setProperty("--extrapolate-blur", state.extrapolateBlur + "px");
+    });
+  };
+  const applyTopBlur = () => {
+    // "live" tuning: take effect on the next tick. Nothing to push to
+    // CSS right now because --time-blur is recomputed per frame.
+  };
+  document.getElementById("ctl-eblur").addEventListener("input", applyExtrapolateBlur);
+  document.getElementById("ctl-tblur").addEventListener("input", applyTopBlur);
+  document.getElementById("ctl-tbop").addEventListener("input", applyTopBlur);
+  document.getElementById("ctl-feather").addEventListener("input", () => {
+    tiles.forEach(t => {
+      t.cvSharp.style.setProperty("--feather-pct", state.featherPct + "%");
+    });
+  });
+
+  ctlScene.addEventListener("change", e => {
+    state.scene = e.target.value;
+    savePersisted();
+    sourceCanvas = null;  // force reprepare
+    replayAll();
+  });
+
+  document.getElementById("btn-replay").addEventListener("click", replayAll);
+  document.getElementById("btn-stop").addEventListener("click", () => {
+    state.abort++;
+    log("stopped.");
+  });
+  document.getElementById("btn-dump").addEventListener("click", () => {
+    const snapshot = {};
+    PERSIST_FIELDS.forEach(k => { snapshot[k] = state[k]; });
+    log("settings: " + JSON.stringify(snapshot));
+  });
+
+  // kick off
+  window.addEventListener("load", () => {
+    // defer one frame so layout settles (getBoundingClientRect)
+    requestAnimationFrame(() => {
+      applyExtrapolateBlur();
+      replayAll();
+    });
+  });
+  window.addEventListener("resize", () => {
+    // no live re-layout while running; replay to re-size canvases
+  });
+})();
+</script>
+</body>
+</html>

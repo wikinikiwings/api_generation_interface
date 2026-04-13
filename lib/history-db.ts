@@ -177,12 +177,17 @@ export function getGenerations(params: {
   const db = getDb();
   let q = `SELECT * FROM generations WHERE username = ?`;
   const p: (string | number)[] = [params.username];
+  // Wrap both sides in `datetime()` so SQLite normalizes the stored
+  // "YYYY-MM-DD HH:MM:SS" format (from datetime('now')) and the client's
+  // ISO "...T...Z" params to the same representation before comparing.
+  // Without this, raw TEXT comparison diverges at the date/time separator
+  // (space 0x20 vs 'T' 0x54) and excludes rows right at the boundary day.
   if (params.startDate) {
-    q += ` AND created_at >= ?`;
+    q += ` AND datetime(created_at) >= datetime(?)`;
     p.push(params.startDate);
   }
   if (params.endDate) {
-    q += ` AND created_at <= ?`;
+    q += ` AND datetime(created_at) <= datetime(?)`;
     p.push(params.endDate);
   }
   q += ` ORDER BY created_at DESC`;

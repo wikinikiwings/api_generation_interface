@@ -14,9 +14,26 @@ export interface HydrateOpts {
 const HYDRATE_DEBOUNCE_MS = 50;
 const PAGE_SIZE_DEFAULT = 20;
 
-let activeReqId = 0;
-let pendingHydrate: Promise<void> | null = null;
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+// Each in-flight fetch is keyed by its serialized opts so simultaneous
+// callers with DIFFERENT ranges (e.g. OutputArea's today-range + Sidebar's
+// 7-day range + SSE's no-range reconnect hydrate) each get their own
+// request instead of collapsing into the first caller's opts. Same-opts
+// callers still dedupe to one fetch.
+const pendingByKey = new Map<string, Promise<void>>();
+const timersByKey = new Map<string, ReturnType<typeof setTimeout>>();
+// Monotonic counter per key: if a newer same-key call arrives while an
+// older one is in flight, the older response is discarded on return.
+const reqIdByKey = new Map<string, number>();
+
+function optsKey(opts: HydrateOpts): string {
+  return JSON.stringify({
+    u: opts.username,
+    f: opts.range?.from ? new Date(opts.range.from).setHours(0, 0, 0, 0) : null,
+    t: opts.range?.to ? new Date(opts.range.to).setHours(23, 59, 59, 999) : null,
+    o: opts.offset ?? 0,
+    l: opts.limit ?? PAGE_SIZE_DEFAULT,
+  });
+}
 
 function buildUrl(opts: HydrateOpts): string {
   const sp = new URLSearchParams();
@@ -42,46 +59,53 @@ function buildUrl(opts: HydrateOpts): string {
  * username/range change. SSE open also calls this on (re)connect.
  *
  * Race-guards:
- * - activeReqId: stale responses from earlier requests are discarded.
- * - pendingHydrate: concurrent callers share one Promise (no duplicate fetch).
- * - HYDRATE_DEBOUNCE_MS: rapid storms collapse to one fetch.
+ * - pendingByKey: same-opts callers share one Promise (no duplicate fetch).
+ *   Different-opts callers each get their own request.
+ * - reqIdByKey: if a newer same-key call supersedes an older one, the
+ *   older response is discarded.
+ * - HYDRATE_DEBOUNCE_MS: rapid same-key storms collapse to one fetch.
  */
 export function hydrateFromServer(opts: HydrateOpts): Promise<void> {
-  if (pendingHydrate) return pendingHydrate;
+  const key = optsKey(opts);
+  const existing = pendingByKey.get(key);
+  if (existing) return existing;
 
-  pendingHydrate = new Promise((resolve) => {
-    debounceTimer = setTimeout(async () => {
-      const myReq = ++activeReqId;
-      debounceTimer = null;
+  const p = new Promise<void>((resolve) => {
+    const timer = setTimeout(async () => {
+      const myReq = (reqIdByKey.get(key) ?? 0) + 1;
+      reqIdByKey.set(key, myReq);
+      timersByKey.delete(key);
       try {
         const res = await fetch(buildUrl(opts), { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const rows = (await res.json()) as ServerGeneration[];
-        if (myReq !== activeReqId) return;
+        if (myReq !== reqIdByKey.get(key)) return;
         applyServerList(rows, { offset: opts.offset ?? 0 });
         debugHistory("hydrate.ok", { count: rows.length, reqId: myReq });
       } catch (e) {
-        if (myReq !== activeReqId) return;
+        if (myReq !== reqIdByKey.get(key)) return;
         useHistoryStore.setState({ error: String(e) });
         debugHistory("hydrate.error", { message: String(e) });
       } finally {
-        pendingHydrate = null;
+        pendingByKey.delete(key);
         resolve();
       }
     }, HYDRATE_DEBOUNCE_MS);
+    timersByKey.set(key, timer);
   });
-  return pendingHydrate;
+  pendingByKey.set(key, p);
+  return p;
 }
 
 /**
  * Test-only: reset internal state.
- * - keepReqId=true (default): preserves activeReqId so stale-discard
+ * - keepReqId=true (default): preserves reqId counters so stale-discard
  *   semantics survive a mid-test "fresh hydration window" reset.
  * - keepReqId=false: full reset; use in beforeEach for test isolation.
  */
 export function _resetHydrateForTest(opts: { keepReqId?: boolean } = {}): void {
-  if (!opts.keepReqId) activeReqId = 0;
-  pendingHydrate = null;
-  if (debounceTimer) clearTimeout(debounceTimer);
-  debounceTimer = null;
+  if (!opts.keepReqId) reqIdByKey.clear();
+  pendingByKey.clear();
+  for (const t of timersByKey.values()) clearTimeout(t);
+  timersByKey.clear();
 }

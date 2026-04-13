@@ -33,6 +33,11 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+# Pin container TZ to UTC so SQLite's datetime('now') is unambiguous and
+# server-side timestamp handling is identical across host TZs. Clients
+# parse incoming created_at as UTC explicitly (see lib/history/util.ts
+# parseServerDate).
+ENV TZ=UTC
 
 # Запускаем от root. Причина: bind-mount /data на Windows-хосте (Docker
 # Desktop file sharing поверх NTFS) приходит в контейнер с владельцем
