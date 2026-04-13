@@ -16,7 +16,7 @@ import {
 import { debugHistory } from "@/lib/history/debug";
 import type { HistoryEntry, NewPendingInput } from "@/lib/history/types";
 
-const ANIMATION_HOLD_MS = 0;
+const ANIMATION_HOLD_MS = 200;
 
 let currentUsername: string | null = null;
 

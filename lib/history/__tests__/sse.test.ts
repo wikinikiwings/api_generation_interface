@@ -91,7 +91,10 @@ describe("sse handler", () => {
     _openForTest("alice");
     const es = MockEventSource.instances[0];
     es.fire("generation.deleted", { id: 100 });
-    await new Promise((r) => setTimeout(r, 0));
+    // Wait past ANIMATION_HOLD_MS — deleteEntry in skipServerDelete branch
+    // sleeps for the animation hold before markRemoved. 300 ms covers any
+    // reasonable hold value without making the test slow.
+    await new Promise((r) => setTimeout(r, 300));
     expect(useHistoryStore.getState().entries[0].state).toBe("removed");
     expect(global.fetch).not.toHaveBeenCalled();
   });
