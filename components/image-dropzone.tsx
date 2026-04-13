@@ -171,17 +171,16 @@ export function ImageDropzone({
     if (fromId === toId) return;
     const fromIdx = value.findIndex((img) => img.id === fromId);
     if (fromIdx === -1) return;
+    // Resolve target index in the ORIGINAL array before removal. Using the
+    // post-splice index shifts forward moves one slot too early (drag #1 → #4
+    // would land at #3).
+    const toIdx = toId === null ? -1 : value.findIndex((img) => img.id === toId);
     const next = value.slice();
     const [moved] = next.splice(fromIdx, 1);
-    if (toId === null) {
+    if (toId === null || toIdx === -1) {
       next.push(moved);
     } else {
-      const toIdx = next.findIndex((img) => img.id === toId);
-      if (toIdx === -1) {
-        next.push(moved);
-      } else {
-        next.splice(toIdx, 0, moved);
-      }
+      next.splice(toIdx, 0, moved);
     }
     onChange(next);
   };
