@@ -72,6 +72,8 @@ Then perform the action and read the console.
 | Cross-device delete doesn't propagate | DevTools → Network → EventStream tab. If no `generation.deleted` event arrived, the server's `broadcastToUser` didn't fan out (HMR-broken subscribers map in dev; check server logs in prod). |
 | Output strip empty after reload | Network tab for `/api/history`. 200 → check `applyServerList` log entry. 4xx/5xx → server side. Skeleton stuck >2 s → check throttling. |
 | Pending card stuck after upload error | Check for `deleteEntry.error` (rollback) or `markPendingError` log. The card should show `uploadError`; deleting it triggers the pending path (`deleteEntry.pending`) — abort + revoke. |
+| Card flashes in Output then disappears (but stays in Sidebar) | TZ parse regression. A code path is doing `Date.parse(row.created_at)` directly instead of `parseServerDate` — the SQLite string is read as local time and the shifted `createdAt` falls outside today's range. Grep for `Date.parse(.*created_at` and route it through `parseServerDate`. |
+| Sidebar empty after reload until "Сбросить (7 дней)" is pressed | `hydrateFromServer` opts collapsed. Check `pendingByKey` in `hydrate.ts` — if reverted to a single `pendingHydrate` variable, concurrent callers with different ranges share one fetch with the first caller's opts, and the Sidebar's 7-day range is silently dropped. Fix: keep the per-opts keying. |
 
 ## Architecture invariants
 
@@ -87,6 +89,19 @@ These are enforced in code (one place each) and tested:
 7. **`applyServerList` cross-device delete** only fires for first page (`offset=0`)
    and only inside the response time window — pagination + old entries safe.
 8. **Animation hold doesn't block server commit** — failure path runs regardless.
+9. **Server timestamps are UTC** — SQLite `datetime('now')` writes
+   `"YYYY-MM-DD HH:MM:SS"` (UTC, no `Z`). All client parses of
+   `row.created_at` go through `parseServerDate` in `lib/history/util.ts`,
+   which normalizes to ISO UTC before `Date.parse`. Never call
+   `Date.parse(row.created_at)` directly — V8 reads the space-separated
+   format as local time and silently shifts `createdAt` by the client's
+   UTC offset.
+10. **Hydrate dedup is keyed by opts** — `hydrateFromServer` coalesces
+    only callers with identical `{username, from, to, offset, limit}`.
+    Different ranges (OutputArea's today + Sidebar's 7-day + SSE's
+    no-range reconnect) each fire their own fetch. Collapsing them to
+    one promise would leak the first caller's opts and drop the others'
+    data on the floor.
 
 ## Spec
 

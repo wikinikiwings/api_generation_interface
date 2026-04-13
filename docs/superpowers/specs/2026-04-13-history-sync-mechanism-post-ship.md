@@ -1,7 +1,7 @@
 # History Sync Mechanism — Post-Ship Handoff
 
-**Date:** 2026-04-13
-**Status:** Shipped. All 22 unit tests green, all 16 manual scenarios verified, production build green.
+**Date:** 2026-04-13 (original ship) · **Hotfix:** 2026-04-14 (`bc9f05a`)
+**Status:** Shipped. All 22 unit tests green, all 16 manual scenarios verified, production build green. Two remote-only regressions surfaced on first container deploy behind Caddy and were fixed — see [Pitfalls 5 and 5a](#pitfalls--things-that-look-wrong-but-arent) and the commit in the [inventory](#commit-inventory). Neither changed invariants or the public API.
 **Intended readers:** any future agent or engineer editing `lib/history/`, debugging sync issues, or recovering from a regression.
 
 ## Quick-nav
@@ -148,7 +148,8 @@ internals.
 | `debug.ts` | `debugHistory(event, payload)` — localStorage-flag-gated | no |
 | `pending.ts` | `setPendingControls/getPendingControls/clearPendingControls` — retry/abort callback map | yes (via mutations) |
 | `store.ts` | Zustand store + state helpers (`setStateOf`, `markRemoved`, `rollbackDeletion`) + `applyServerRow` (single server-row decision) + `applyServerList` (cross-device delete invariant) | no (internal-only) |
-| `hydrate.ts` | `hydrateFromServer` — debounced, race-guarded `/api/history` fetch → `applyServerList` | no |
+| `hydrate.ts` | `hydrateFromServer` — debounced, race-guarded `/api/history` fetch → `applyServerList`. Dedup keyed by opts (`pendingByKey`) since 2026-04-14. | no |
+| `util.ts` | `extractUuid` (filepath → uuid), `parseServerDate` (SQLite `"YYYY-MM-DD HH:MM:SS"` → ms UTC — invariant 9). | no |
 | `mutations.ts` | `deleteEntry`, `addPendingEntry`, `updatePendingEntry`, `updateEntry`, `confirmPendingEntry`, `markPendingError`, `setCurrentUsername`, `setUsernameForTest` | yes (deleteEntry + pending lifecycle) |
 | `broadcast.ts` | BroadcastChannel wire-up. On `message` → `deleteEntry(...,{skipServerDelete:true})` or `hydrateFromServer`. Exports `broadcast.post`. | no (but posts from mutations) |
 | `sse.ts` | `useGenerationEvents(username)` + internal `open`/`close`. Translates SSE events to in-place mutations. | yes (hook) |
@@ -365,8 +366,10 @@ would make rollback dependent on anim timing.
 5. Output strip / Sidebar render. ~150-200ms skeleton window between
    mount and first paint (no persistence).
 6. useGenerationEvents mounts → opens SSE → sse.open event fires
-   → another hydrateFromServer (dedup'd with the mount-one by
-      pendingHydrate)
+   → another hydrateFromServer (NO range this time) — dedup'd with
+      the mount hydrate ONLY if opts match (same username, same range,
+      same offset/limit); otherwise each fires its own fetch. Keyed
+      via pendingByKey in hydrate.ts since 2026-04-14 (`bc9f05a`).
 ```
 
 ## Test coverage — what is guaranteed
@@ -376,7 +379,7 @@ would make rollback dependent on anim timing.
 | Block | Covers | Files |
 |---|---|---|
 | store.test.ts | applyServerRow branches (insert, merge-keeping-blobs, ignore DELETING, ignore REMOVED, PENDING→LIVE confirm) + applyServerList cross-device delete (in-window, pagination-skip, out-of-window preserved) | U1-U8 |
-| hydrate.test.ts | Concurrent-call dedup (shared Promise), stale-response discard via activeReqId, 50ms debounce coalescing | U16-U18 |
+| hydrate.test.ts | Same-opts dedup via pendingByKey (shared Promise), stale-response discard via per-key reqId counter, 50ms debounce coalescing | U16-U18 |
 | mutations.test.ts | deleteEntry on PENDING (no fetch + abort), LIVE happy path, HTTP-500 rollback, idempotency on DELETING, idempotency on REMOVED, deleteEntry(serverGenId:number), skipServerDelete flag | U9-U15 |
 | sse.test.ts | generation.created → applyServerRow, generation.deleted → deleteEntry skipServer, open → hydrate, malformed payload doesn't crash | U19-U22 |
 
@@ -501,10 +504,36 @@ code.
 
 ### 5. `useGenerationEvents` and `useHistoryEntries` both cause hydration
 
-`useGenerationEvents` calls hydrate on SSE `open`. `useHistoryEntries`
-calls hydrate on mount + on `username`/`range` change. These can fire
-within milliseconds of each other. The `pendingHydrate` Promise
-coalesces them to a single fetch.
+`useGenerationEvents` calls hydrate on SSE `open` (no range).
+`useHistoryEntries` calls hydrate on mount + on `username`/`range`
+change. These fire within milliseconds of each other with **different
+opts** (today-range from OutputArea, 7-day from Sidebar, no-range
+from SSE). `hydrateFromServer` dedupes per-opts via `pendingByKey` —
+same opts share a promise, different opts each fire their own
+fetch. **Do not** collapse this back to a single `pendingHydrate`:
+the original implementation did, and the first caller's opts won
+the race while the rest (e.g. Sidebar's 7-day) were silently
+dropped. Symptom: Sidebar empty after reload until the user pressed
+"Сбросить (7 дней)". Fixed 2026-04-14 in `bc9f05a`.
+
+### 5a. SQLite `datetime('now')` returns UTC without a `Z` suffix
+
+Format: `"2026-04-14 18:30:00"` (space separator, no timezone marker).
+V8/Chrome interpret this non-ISO format as **local time**, which
+silently shifts `createdAt` on the client by the UTC offset. Never
+call `Date.parse(row.created_at)` directly — use
+`parseServerDate(row.created_at)` from `lib/history/util.ts`. The
+helper normalizes to ISO UTC (`replace(' ', 'T') + 'Z'`) before
+parsing. Server-side SQL comparisons also wrap both sides in
+`datetime()` so the stored space-separated format and the client's
+ISO `"...T...Z"` params compare identically. Fixed 2026-04-14 in
+`bc9f05a`.
+
+Symptom if regressed: card flashes in Output after generation, then
+disappears while still visible in Sidebar — the pending entry with
+`createdAt = Date.now()` passes the today filter, but after SSE
+`generation.created` runs `applyServerRow`, the shifted `createdAt`
+lands outside the local-today range and the filter drops the card.
 
 ### 6. Entry shows up in store but not in hook result
 
@@ -701,6 +730,7 @@ Full sequence from the redesign, in order:
 | `eb74130` | fix(history-sidebar): normalize date range to whole-day boundaries |
 | `0057eb5` | chore(history): ANIMATION_HOLD_MS=200 + fix U20 test for the hold |
 | `2f0e02f` | feat(history): deletion fade-out animation |
+| `bc9f05a` | fix history — 2026-04-14 hotfix, two independent bugs surfaced on remote (Caddy) container deploy: (1) `Date.parse` on SQLite `"YYYY-MM-DD HH:MM:SS"` is local-time parse → new `parseServerDate` UTC helper + `datetime()`-wrapped SQL comparisons; (2) single `pendingHydrate` collapsed concurrent different-opts callers → per-opts `pendingByKey` map + `ENV TZ=UTC` in Dockerfile. |
 
 Each commit is self-contained and tested. Reverting any single commit
 should leave the tree in a build-green state, with one exception:
