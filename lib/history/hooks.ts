@@ -76,12 +76,12 @@ export function useHistoryEntries(opts: UseHistoryEntriesOpts): {
       .filter((e) => {
         if (e.state === "removed") return false;
         if (excludeDeleting && e.state === "deleting") return false;
-        if (range?.from && e.createdAt < range.from.getTime()) return false;
-        if (range?.to && e.createdAt > range.to.getTime()) return false;
+        if (rangeFromKey != null && e.createdAt < rangeFromKey) return false;
+        if (rangeToKey != null && e.createdAt > rangeToKey) return false;
         return true;
       })
       .sort((a, b) => b.createdAt - a.createdAt);
-  }, [allEntries, rangeFromKey, rangeToKey, excludeDeleting, range]);
+  }, [allEntries, rangeFromKey, rangeToKey, excludeDeleting]);
 
   return {
     entries,

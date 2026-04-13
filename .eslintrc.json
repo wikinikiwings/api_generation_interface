@@ -1,0 +1,41 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": [
+              "@/lib/history/store",
+              "@/lib/history/mutations",
+              "@/lib/history/hydrate",
+              "@/lib/history/sse",
+              "@/lib/history/broadcast",
+              "@/lib/history/pending",
+              "@/lib/history/util",
+              "@/lib/history/debug",
+              "@/lib/history/hooks",
+              "@/lib/history/types"
+            ],
+            "message": "Import from '@/lib/history' (the public index) instead. Internal modules are private to lib/history/."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["lib/history/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    },
+    {
+      "files": ["lib/history/__tests__/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
+}

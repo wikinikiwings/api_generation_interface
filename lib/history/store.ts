@@ -179,3 +179,15 @@ export function applyServerList(rows: ServerGeneration[], opts: ApplyListOpts): 
 export function _resetForTest(): void {
   useHistoryStore.setState({ entries: [], error: null });
 }
+
+// One-time cleanup: the previous mechanism persisted under "wavespeed-history".
+// New store doesn't persist (server is the source of truth; cross-device sync
+// requires it). Remove the stale key so it doesn't sit in localStorage forever.
+// No-op if already absent.
+if (typeof window !== "undefined") {
+  try {
+    window.localStorage.removeItem("wavespeed-history");
+  } catch {
+    // ignore (private mode, quota, etc.)
+  }
+}
