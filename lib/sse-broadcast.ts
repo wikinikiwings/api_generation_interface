@@ -17,7 +17,19 @@ interface Subscriber {
   heartbeat: ReturnType<typeof setInterval> | null;
 }
 
-const subscribers = new Map<string, Set<Subscriber>>();
+// Stashed on globalThis so Next.js HMR (dev) and any future module
+// hot-reload path in prod don't wipe the registration table while
+// clients still have open EventSource connections. Without this, edits
+// to server files during `npm run dev` silently break cross-tab sync:
+// the new module sees an empty Map and `broadcastToUser` enqueues
+// nothing, but the old TCP connections stay half-open until the client
+// watchdog (see lib/history/sse.ts) force-reconnects.
+const globalForSubscribers = globalThis as unknown as {
+  __sseSubscribers?: Map<string, Set<Subscriber>>;
+};
+const subscribers: Map<string, Set<Subscriber>> =
+  globalForSubscribers.__sseSubscribers ?? new Map<string, Set<Subscriber>>();
+globalForSubscribers.__sseSubscribers = subscribers;
 
 const encoder = new TextEncoder();
 
@@ -64,7 +76,12 @@ export function addSubscriber(
 
   entry.heartbeat = setInterval(() => {
     try {
-      controller.enqueue(serializeComment("heartbeat"));
+      // Named event (not a `:` comment) so the client's EventSource
+      // fires a JS listener and the watchdog can observe liveness.
+      // Comments keep the TCP connection warm but never reach the JS
+      // layer, so a silent half-open (HMR-wiped registry, proxy idle,
+      // laptop sleep) would otherwise look identical to a live stream.
+      controller.enqueue(serialize("heartbeat", { t: Date.now() }));
     } catch {
       // Controller is closed. The cancel() path on the route handler
       // will also remove us; this is defensive.

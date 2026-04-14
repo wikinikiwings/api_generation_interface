@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { extractUuid, parseServerDate } from "@/lib/history/util";
 import { debugHistory } from "@/lib/history/debug";
 import type { EntryState, HistoryEntry, ServerGeneration } from "@/lib/history/types";
+import type { OutputFormat } from "@/lib/providers/types";
 
 interface StoreState {
   entries: HistoryEntry[];
@@ -130,6 +131,7 @@ function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEntry {
     prompt,
     provider: "wavespeed",
     workflowName,
+    outputFormat: inferOutputFormat(firstImage?.content_type, filename),
     createdAt: parseServerDate(row.created_at),
     status: "completed",
     error: null,
@@ -137,6 +139,17 @@ function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEntry {
     outputUrl: stem ? `/api/history/image/mid_${stem}.jpg` : undefined,
     thumbUrl: stem ? `/api/history/image/thumb_${stem}.jpg` : undefined,
   };
+}
+
+function inferOutputFormat(
+  contentType: string | undefined,
+  filename: string
+): OutputFormat | undefined {
+  if (contentType === "image/jpeg" || contentType === "image/jpg") return "jpeg";
+  if (contentType === "image/png") return "png";
+  const m = /\.(png|jpe?g)$/i.exec(filename);
+  if (!m) return undefined;
+  return m[1].toLowerCase().startsWith("j") ? "jpeg" : "png";
 }
 
 // === SERVER LIST INGESTION ===

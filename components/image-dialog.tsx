@@ -312,7 +312,8 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `wavespeed-${currentEntry.taskId || currentEntry.id}.${currentEntry.outputFormat}`;
+      const ext = currentEntry.outputFormat === "jpeg" ? "jpeg" : "png";
+      a.download = `wavespeed-${currentEntry.taskId || currentEntry.id}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -416,7 +417,7 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
               backdropSrc={thumbUrlForEntry(currentEntry)}
               alt={currentEntry.prompt}
               originalUrl={effectiveDownloadUrl}
-              downloadFilename={`wavespeed-${currentEntry.taskId || currentEntry.id}.${currentEntry.outputFormat}`}
+              downloadFilename={`wavespeed-${currentEntry.taskId || currentEntry.id}.${currentEntry.outputFormat === "jpeg" ? "jpeg" : "png"}`}
               onLoadError={() => {
                 if (
                   !triedFallbackRef.current &&

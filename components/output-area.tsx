@@ -157,9 +157,10 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
+      const ext = entry.outputFormat === "jpeg" ? "jpeg" : "png";
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = `wavespeed-${entry.taskId || entry.id}.${entry.outputFormat}`;
+      a.download = `wavespeed-${entry.taskId || entry.id}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -189,10 +190,11 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
             // visually shows).
             const dragUrl = entry.originalUrl ?? entry.outputUrl;
             if (!dragUrl) return;
+            const ext = entry.outputFormat === "jpeg" ? "jpeg" : "png";
             const payload = {
               url: dragUrl,
-              filename: `wavespeed-${entry.taskId || entry.id}.${entry.outputFormat}`,
-              contentType: `image/${entry.outputFormat === "jpeg" ? "jpeg" : "png"}`,
+              filename: `wavespeed-${entry.taskId || entry.id}.${ext}`,
+              contentType: `image/${ext}`,
             };
             e.dataTransfer.setData(
               "application/x-viewcomfy-media",
