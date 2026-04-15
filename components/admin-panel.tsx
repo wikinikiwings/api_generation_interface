@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/stores/settings-store";
+import { StylesSection } from "@/components/admin/styles-section";
 import type { ProviderId } from "@/lib/providers/types";
 import type { ProviderMeta } from "@/lib/providers/registry";
 
@@ -219,17 +220,8 @@ export function AdminPanel() {
         </div>
       </section>
 
-      {/* Future settings placeholder */}
-      <section className="rounded-xl border border-dashed border-border bg-muted/20 p-5">
-        <h2 className="text-base font-semibold text-muted-foreground">
-          Дополнительные настройки
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Пока пусто. В будущих версиях здесь появятся: селектор модели
-          (когда будет мульти-модель), лимиты, настройки темы по умолчанию,
-          фильтры истории.
-        </p>
-      </section>
+      {/* Prompt styles */}
+      <StylesSection />
     </div>
   );
 }
