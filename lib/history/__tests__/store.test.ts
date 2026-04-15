@@ -3,6 +3,7 @@ import {
   useHistoryStore,
   applyServerRow,
   applyServerList,
+  serverGenToEntry,
   _resetForTest,
 } from "@/lib/history/store";
 import type { ServerGeneration } from "@/lib/history/types";
@@ -96,6 +97,30 @@ describe("applyServerRow", () => {
     expect(entry.confirmed).toBe(true);
     expect(entry.serverGenId).toBe(200);
     expect(entry.outputUrl).toBe("blob:y");
+  });
+
+  it("hydrates userPrompt and styleId from prompt_data when present", () => {
+    const row = mkRow({
+      prompt_data: JSON.stringify({
+        prompt: "cinematic. a cat. 35mm",
+        userPrompt: "a cat",
+        styleId: "kino-a3f",
+      }),
+    });
+    const entry = serverGenToEntry(row, "uuid-1");
+    expect(entry.prompt).toBe("cinematic. a cat. 35mm");
+    expect(entry.userPrompt).toBe("a cat");
+    expect(entry.styleId).toBe("kino-a3f");
+  });
+
+  it("leaves userPrompt and styleId undefined for pre-feature entries", () => {
+    const row = mkRow({
+      prompt_data: JSON.stringify({ prompt: "a cat" }),
+    });
+    const entry = serverGenToEntry(row, "uuid-2");
+    expect(entry.prompt).toBe("a cat");
+    expect(entry.userPrompt).toBeUndefined();
+    expect(entry.styleId).toBeUndefined();
   });
 });
 

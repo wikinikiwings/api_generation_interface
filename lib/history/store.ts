@@ -110,13 +110,22 @@ function mergeKeepingBlobs(local: HistoryEntry, server: HistoryEntry): HistoryEn
   };
 }
 
-function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEntry {
+export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEntry {
   let prompt = "";
   let workflowName: string | undefined = row.workflow_name;
+  let userPrompt: string | undefined;
+  let styleId: string | undefined;
   try {
-    const parsed = JSON.parse(row.prompt_data) as { prompt?: string; workflow?: string };
+    const parsed = JSON.parse(row.prompt_data) as {
+      prompt?: string;
+      workflow?: string;
+      userPrompt?: string;
+      styleId?: string;
+    };
     prompt = parsed.prompt ?? "";
     workflowName = parsed.workflow ?? row.workflow_name;
+    if (typeof parsed.userPrompt === "string") userPrompt = parsed.userPrompt;
+    if (typeof parsed.styleId === "string") styleId = parsed.styleId;
   } catch {
     // Malformed prompt_data — keep prompt as "".
   }
@@ -129,6 +138,8 @@ function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEntry {
     state: "live",
     confirmed: true,
     prompt,
+    userPrompt,
+    styleId,
     provider: "wavespeed",
     workflowName,
     outputFormat: inferOutputFormat(firstImage?.content_type, filename),
