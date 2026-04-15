@@ -16,6 +16,8 @@ import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
 import { cacheBlob } from "@/lib/image-cache";
+import { composeFinalPrompt } from "@/lib/styles/inject";
+import { DEFAULT_STYLE_ID, type Style } from "@/lib/styles/types";
 import {
   addPendingEntry,
   updateEntry,
@@ -133,6 +135,36 @@ export function GenerateForm() {
     () => FORMAT_OPTIONS.filter((o) => modelMeta.capabilities.outputFormats.includes(o.value)),
     [modelMeta]
   );
+  const selectedStyleId = useSettingsStore((s) => s.selectedStyleId);
+  const setSelectedStyleId = useSettingsStore((s) => s.setSelectedStyleId);
+  const reconcileSelectedStyle = useSettingsStore((s) => s.reconcileSelectedStyle);
+
+  const [styles, setStyles] = React.useState<Style[]>([]);
+
+  const loadStyles = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/styles", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { styles: Style[] };
+      setStyles(data.styles);
+      reconcileSelectedStyle(data.styles.map((s) => s.id));
+    } catch (err) {
+      console.warn("[generate-form] failed to load styles:", err);
+    }
+  }, [reconcileSelectedStyle]);
+
+  React.useEffect(() => {
+    void loadStyles();
+    const onFocus = () => void loadStyles();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [loadStyles]);
+
+  const activeStyle = React.useMemo<Style | null>(() => {
+    if (selectedStyleId === DEFAULT_STYLE_ID) return null;
+    return styles.find((s) => s.id === selectedStyleId) ?? null;
+  }, [styles, selectedStyleId]);
+
   const { username } = useUser();
   const prompt = usePromptStore((s) => s.prompt);
   const setPrompt = usePromptStore((s) => s.setPrompt);
@@ -235,7 +267,7 @@ export function GenerateForm() {
         hasImages ? "edit" : "t2i"
       }`;
       const promptPayload = {
-        prompt: prompt.trim(),
+        prompt: composeFinalPrompt(prompt.trim(), activeStyle),
         resolution: hasResolutions ? resolution : undefined,
         aspectRatio: aspectRatio || undefined,
         outputFormat,
@@ -438,7 +470,7 @@ export function GenerateForm() {
         body: JSON.stringify({
           provider: activeProvider,
           modelId: selectedModel,
-          prompt: prompt.trim(),
+          prompt: composeFinalPrompt(prompt.trim(), activeStyle),
           images: images.map((i) => i.dataUrl),
           // Compute source aspect from the FIRST image, if any. Seedream
           // providers use this when the user picked "Auto (match input)".
@@ -547,10 +579,7 @@ export function GenerateForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex h-full flex-col gap-5">
-      <div className="space-y-2">
-        <Label>Входные изображения · опционально (пусто = text-to-image)</Label>
-        <ImageDropzone value={images} onChange={setImages} maxImages={14} />
-      </div>
+      <ImageDropzone value={images} onChange={setImages} maxImages={14} />
 
       <div className="space-y-2">
         <Label htmlFor="prompt">Промпт</Label>
@@ -563,7 +592,7 @@ export function GenerateForm() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {hasResolutions && (
         <div className="space-y-1.5">
           <Label htmlFor="resolution">Разрешение</Label>
@@ -595,6 +624,18 @@ export function GenerateForm() {
           />
         </div>
         )}
+        <div className="space-y-1.5">
+          <Label htmlFor="style">Стиль</Label>
+          <Select
+            id="style"
+            value={selectedStyleId}
+            onChange={(e) => setSelectedStyleId(e.target.value)}
+            options={[
+              { value: DEFAULT_STYLE_ID, label: "Стандартный" },
+              ...styles.map((s) => ({ value: s.id, label: s.name })),
+            ]}
+          />
+        </div>
       </div>
 
       {/* Sticky Generate button — pinned to the bottom of the scrollable
