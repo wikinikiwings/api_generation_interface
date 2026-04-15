@@ -9,6 +9,7 @@ import {
   STYLE_NAME_MAX,
   STYLE_PART_MAX,
 } from "@/lib/styles/types";
+import { composeFinalPrompt } from "@/lib/styles/inject";
 
 type Draft = {
   // For a new (unsaved) style, id is undefined.
@@ -338,12 +339,12 @@ export function StylesSection() {
 }
 
 function previewFor(draft: Draft): string {
-  const p = draft.prefix.trim();
-  const s = draft.suffix.trim();
-  const placeholder = "<промпт пользователя>";
-  const parts: string[] = [];
-  if (p) parts.push(p);
-  parts.push(placeholder);
-  if (s) parts.push(s);
-  return parts.join(". ");
+  return composeFinalPrompt("<промпт пользователя>", {
+    id: "__preview__",
+    name: "",
+    prefix: draft.prefix,
+    suffix: draft.suffix,
+    createdAt: "",
+    updatedAt: "",
+  });
 }
