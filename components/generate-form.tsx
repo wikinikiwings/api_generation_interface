@@ -580,6 +580,16 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         />
       </div>
 
+      <div className="space-y-1.5">
+        <Label htmlFor="style">Стиль</Label>
+        <StylesMultiSelect
+          id="style"
+          styles={styles}
+          selectedIds={selectedStyleIds}
+          onChange={setSelectedStyleIds}
+        />
+      </div>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {hasResolutions && (
         <div className="space-y-1.5">
@@ -614,21 +624,11 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         )}
       </div>
 
-      <div className="space-y-1.5">
-        <Label htmlFor="style">Стиль</Label>
-        <StylesMultiSelect
-          id="style"
-          styles={styles}
-          selectedIds={selectedStyleIds}
-          onChange={setSelectedStyleIds}
-        />
-      </div>
-
       {/* Sticky Generate button — pinned to the bottom of the scrollable
           form area so it's always reachable regardless of form length. The
           negative margins bleed the background color to the card edges,
           counteracting the scroll-container's p-5 padding. */}
-      <div className="sticky bottom-0 -mx-5 -mb-5 mt-auto border-t border-border bg-background px-5 py-3">
+      <div className="sticky bottom-0 -mx-5 -mb-5 mt-auto border-t border-border bg-background px-5 py-2">
         <Button
           type="submit"
           size="lg"
