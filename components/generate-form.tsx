@@ -268,6 +268,8 @@ export function GenerateForm() {
       }`;
       const promptPayload = {
         prompt: composeFinalPrompt(prompt.trim(), activeStyle),
+        userPrompt: prompt.trim(),
+        styleId: activeStyle ? activeStyle.id : DEFAULT_STYLE_ID,
         resolution: hasResolutions ? resolution : undefined,
         aspectRatio: aspectRatio || undefined,
         outputFormat,
