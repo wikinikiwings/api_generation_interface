@@ -55,3 +55,6 @@ next-env.d.ts
 # visual companion; not source code)
 /.superpowers/
 /.claude/
+
+# runtime-generated prompt style files
+/data/styles/
