@@ -26,16 +26,38 @@ function loadModel(): ModelId {
   return "nano-banana-2";
 }
 
-const STYLE_LS_KEY = "wavespeed:selectedStyle:v1";
+const STYLE_LS_KEY_V1 = "wavespeed:selectedStyle:v1";
+const STYLE_LS_KEY_V2 = "wavespeed:selectedStyles:v2";
 const DEFAULT_STYLE_ID = "__default__";
 
-function loadStyleId(): string {
-  if (typeof window === "undefined") return DEFAULT_STYLE_ID;
+/**
+ * Load the persisted selection. Supports a one-shot migration from v1
+ * (single styleId) to v2 (array of styleIds):
+ *   - v1 "__default__" → []
+ *   - v1 "<id>"        → ["<id>"]
+ * After migration the v1 key is deleted so we only read v2 on subsequent
+ * loads. Silent — no UI, no toast.
+ */
+function loadStyleIds(): string[] {
+  if (typeof window === "undefined") return [];
   try {
-    const v = window.localStorage.getItem(STYLE_LS_KEY);
-    if (typeof v === "string" && v.length > 0) return v;
+    const v2 = window.localStorage.getItem(STYLE_LS_KEY_V2);
+    if (typeof v2 === "string" && v2.length > 0) {
+      const parsed = JSON.parse(v2);
+      if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+        return parsed;
+      }
+    }
+    // Migration from v1
+    const v1 = window.localStorage.getItem(STYLE_LS_KEY_V1);
+    if (typeof v1 === "string" && v1.length > 0) {
+      const migrated = v1 === DEFAULT_STYLE_ID ? [] : [v1];
+      window.localStorage.setItem(STYLE_LS_KEY_V2, JSON.stringify(migrated));
+      window.localStorage.removeItem(STYLE_LS_KEY_V1);
+      return migrated;
+    }
   } catch {}
-  return DEFAULT_STYLE_ID;
+  return [];
 }
 
 /**
@@ -68,14 +90,14 @@ interface SettingsState {
   hydrateUserModel: (username: string) => Promise<void>;
   updateSelectedProvider: (id: ProviderId) => Promise<void>;
   setSelectedModel: (id: ModelId, username?: string | null) => void;
-  selectedStyleId: string;
-  setSelectedStyleId: (id: string) => void;
+  selectedStyleIds: string[];
+  setSelectedStyleIds: (ids: string[]) => void;
   /**
-   * If the currently-selected style id is not in `knownIds`, reset to the
-   * default. Called by the generation form after loading /api/styles, so a
-   * style deleted in the admin silently stops applying. No-op otherwise.
+   * Drop any ids from selectedStyleIds that are not in knownIds (e.g. after
+   * an admin deletion). Silent — no toast. If all selected styles go away,
+   * selectedStyleIds becomes [] (same as the "Стандартный" state).
    */
-  reconcileSelectedStyle: (knownIds: readonly string[]) => void;
+  reconcileSelectedStyles: (knownIds: readonly string[]) => void;
   /**
    * Start polling /api/settings every 30s + on visibilitychange. Returns
    * a cleanup function. Idempotent within a single component lifecycle:
@@ -96,7 +118,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()((set, get) => ({
   selectedProvider: "wavespeed",
   selectedModel: loadModel(),
-  selectedStyleId: loadStyleId(),
+  selectedStyleIds: loadStyleIds(),
   isHydrated: false,
 
   setSelectedModel: (id, username) => {
@@ -120,17 +142,21 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     }
   },
 
-  setSelectedStyleId: (id) => {
-    set({ selectedStyleId: id });
-    try { window.localStorage.setItem(STYLE_LS_KEY, id); } catch {}
+  setSelectedStyleIds: (ids) => {
+    set({ selectedStyleIds: ids });
+    try {
+      window.localStorage.setItem(STYLE_LS_KEY_V2, JSON.stringify(ids));
+    } catch {}
   },
 
-  reconcileSelectedStyle: (knownIds) => {
-    const current = get().selectedStyleId;
-    if (current === DEFAULT_STYLE_ID) return;
-    if (knownIds.includes(current)) return;
-    set({ selectedStyleId: DEFAULT_STYLE_ID });
-    try { window.localStorage.setItem(STYLE_LS_KEY, DEFAULT_STYLE_ID); } catch {}
+  reconcileSelectedStyles: (knownIds) => {
+    const current = get().selectedStyleIds;
+    const filtered = current.filter((id) => knownIds.includes(id));
+    if (filtered.length === current.length) return; // no change
+    set({ selectedStyleIds: filtered });
+    try {
+      window.localStorage.setItem(STYLE_LS_KEY_V2, JSON.stringify(filtered));
+    } catch {}
   },
 
   /**

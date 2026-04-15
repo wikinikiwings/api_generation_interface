@@ -47,7 +47,7 @@ export function Playground() {
   const setSelectedModel = useSettingsStore((s) => s.setSelectedModel);
   const hydrateUserModel = useSettingsStore((s) => s.hydrateUserModel);
   const startProviderPolling = useSettingsStore((s) => s.startProviderPolling);
-  const reconcileSelectedStyle = useSettingsStore((s) => s.reconcileSelectedStyle);
+  const reconcileSelectedStyles = useSettingsStore((s) => s.reconcileSelectedStyles);
   const [styles, setStyles] = React.useState<Style[]>([]);
 
   const loadStyles = React.useCallback(async () => {
@@ -56,11 +56,11 @@ export function Playground() {
       if (!res.ok) return;
       const data = (await res.json()) as { styles: Style[] };
       setStyles(data.styles);
-      reconcileSelectedStyle(data.styles.map((s) => s.id));
+      reconcileSelectedStyles(data.styles.map((s) => s.id));
     } catch (err) {
       console.warn("[playground] failed to load styles:", err);
     }
-  }, [reconcileSelectedStyle]);
+  }, [reconcileSelectedStyles]);
 
   React.useEffect(() => {
     void loadStyles();

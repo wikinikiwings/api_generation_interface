@@ -362,7 +362,9 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
                 {
                   setPrompt: (s) => usePromptStore.getState().setPrompt(s),
                   setSelectedStyleId: (id) =>
-                    useSettingsStore.getState().setSelectedStyleId(id),
+                    useSettingsStore
+                      .getState()
+                      .setSelectedStyleIds(id === DEFAULT_STYLE_ID ? [] : [id]),
                   toastInfo: (msg) => toast.success(msg, { duration: 1500 }),
                   toastWarn: (msg) => toast.warning(msg, { duration: 3000 }),
                 }

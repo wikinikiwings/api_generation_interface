@@ -139,8 +139,18 @@ export function GenerateForm({ styles }: GenerateFormProps) {
     () => FORMAT_OPTIONS.filter((o) => modelMeta.capabilities.outputFormats.includes(o.value)),
     [modelMeta]
   );
-  const selectedStyleId = useSettingsStore((s) => s.selectedStyleId);
-  const setSelectedStyleId = useSettingsStore((s) => s.setSelectedStyleId);
+  const selectedStyleIds = useSettingsStore((s) => s.selectedStyleIds);
+  const setSelectedStyleIds = useSettingsStore((s) => s.setSelectedStyleIds);
+
+  // Adapter for the current single-Select UI. Task 4 replaces the Select
+  // with a real multi-select; until then, we treat the first array element
+  // as the single selection and write back as a zero- or one-element array.
+  const selectedStyleId = selectedStyleIds[0] ?? DEFAULT_STYLE_ID;
+  const setSelectedStyleId = React.useCallback(
+    (id: string) =>
+      setSelectedStyleIds(id === DEFAULT_STYLE_ID ? [] : [id]),
+    [setSelectedStyleIds]
+  );
 
   const activeStyle = React.useMemo<Style | null>(() => {
     if (selectedStyleId === DEFAULT_STYLE_ID) return null;
