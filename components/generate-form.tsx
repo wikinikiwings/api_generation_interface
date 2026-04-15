@@ -120,7 +120,11 @@ export function cancelGeneration(historyId: string): void {
   }
 }
 
-export function GenerateForm() {
+interface GenerateFormProps {
+  styles: Style[];
+}
+
+export function GenerateForm({ styles }: GenerateFormProps) {
   const activeProvider = useSettingsStore((s) => s.selectedProvider);
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const modelMeta = MODELS_META[selectedModel];
@@ -137,28 +141,6 @@ export function GenerateForm() {
   );
   const selectedStyleId = useSettingsStore((s) => s.selectedStyleId);
   const setSelectedStyleId = useSettingsStore((s) => s.setSelectedStyleId);
-  const reconcileSelectedStyle = useSettingsStore((s) => s.reconcileSelectedStyle);
-
-  const [styles, setStyles] = React.useState<Style[]>([]);
-
-  const loadStyles = React.useCallback(async () => {
-    try {
-      const res = await fetch("/api/styles", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as { styles: Style[] };
-      setStyles(data.styles);
-      reconcileSelectedStyle(data.styles.map((s) => s.id));
-    } catch (err) {
-      console.warn("[generate-form] failed to load styles:", err);
-    }
-  }, [reconcileSelectedStyle]);
-
-  React.useEffect(() => {
-    void loadStyles();
-    const onFocus = () => void loadStyles();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [loadStyles]);
 
   const activeStyle = React.useMemo<Style | null>(() => {
     if (selectedStyleId === DEFAULT_STYLE_ID) return null;

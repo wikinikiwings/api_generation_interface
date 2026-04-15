@@ -12,6 +12,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useUser } from "@/app/providers/user-provider";
 import { listAllModels } from "@/lib/providers/models";
 import type { ModelId, ProviderId } from "@/lib/providers/types";
+import type { Style } from "@/lib/styles/types";
 
 /**
  * Display names for the three provider IDs. Hardcoded here — there are
@@ -46,6 +47,28 @@ export function Playground() {
   const setSelectedModel = useSettingsStore((s) => s.setSelectedModel);
   const hydrateUserModel = useSettingsStore((s) => s.hydrateUserModel);
   const startProviderPolling = useSettingsStore((s) => s.startProviderPolling);
+  const reconcileSelectedStyle = useSettingsStore((s) => s.reconcileSelectedStyle);
+  const [styles, setStyles] = React.useState<Style[]>([]);
+
+  const loadStyles = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/styles", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { styles: Style[] };
+      setStyles(data.styles);
+      reconcileSelectedStyle(data.styles.map((s) => s.id));
+    } catch (err) {
+      console.warn("[playground] failed to load styles:", err);
+    }
+  }, [reconcileSelectedStyle]);
+
+  React.useEffect(() => {
+    void loadStyles();
+    const onFocus = () => void loadStyles();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [loadStyles]);
+
   const { username } = useUser();
 
   // Flag set by the polling callback to mark that the next provider change
@@ -160,7 +183,7 @@ export function Playground() {
               <ThemeToggle />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-5">
-              <GenerateForm />
+              <GenerateForm styles={styles} />
             </div>
           </div>
         </section>
