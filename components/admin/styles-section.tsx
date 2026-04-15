@@ -188,7 +188,7 @@ export function StylesSection() {
           ) : (
             <ul className="space-y-1">
               {/* Unsaved new style gets a row at the top */}
-              {draft?.id === undefined && (
+              {draft !== null && draft.id === undefined && (
                 <li>
                   <button
                     type="button"
