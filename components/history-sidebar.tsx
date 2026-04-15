@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { History, ChevronRight, Copy, Trash2, SlidersHorizontal } from "lucide-react";
+import { History, ChevronRight, Copy, Trash2, SlidersHorizontal, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ImageDialog } from "@/components/image-dialog";
@@ -14,12 +14,16 @@ import {
   type HistoryEntry,
 } from "@/lib/history";
 import { usePromptStore } from "@/stores/prompt-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { BlurUpImage } from "@/components/blur-up-image";
+import { DEFAULT_STYLE_ID, type Style } from "@/lib/styles/types";
+import { applyCopiedPrompt } from "@/lib/styles/apply-copied";
 
 export interface HistorySidebarProps {
   open: boolean;
   setOpen: (open: boolean) => void;
   className?: string;
+  styles: Style[];
 }
 
 function toDateInput(d: Date): string {
@@ -29,7 +33,7 @@ function toDateInput(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps) {
+export function HistorySidebar({ open, setOpen, className, styles }: HistorySidebarProps) {
   const { username } = useUser();
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [dateRange, setDateRange] = React.useState<{ from: Date; to: Date }>(() => ({
@@ -208,6 +212,7 @@ export function HistorySidebar({ open, setOpen, className }: HistorySidebarProps
                 onDelete={() => handleDelete(entry)}
                 siblings={entries}
                 index={idx}
+                styles={styles}
               />
             ))}
             {hasMore && (
@@ -233,11 +238,13 @@ function EntryCard({
   onDelete,
   siblings,
   index,
+  styles,
 }: {
   entry: HistoryEntry;
   onDelete: () => void;
   siblings: HistoryEntry[];
   index: number;
+  styles: Style[];
 }) {
   const isPending = entry.state === "pending";
   const uploadError = entry.uploadError;
@@ -262,10 +269,22 @@ function EntryCard({
   async function handleCopy() {
     if (!entry.prompt) return;
     const ok = await copyToClipboard(entry.prompt);
-    if (ok) {
-      usePromptStore.getState().setPrompt(entry.prompt);
-      toast.success("Промпт применён и скопирован", { duration: 1500 });
-    }
+    if (!ok) return;
+    applyCopiedPrompt(
+      {
+        prompt: entry.prompt,
+        userPrompt: entry.userPrompt,
+        styleId: entry.styleId,
+      },
+      styles,
+      {
+        setPrompt: (s) => usePromptStore.getState().setPrompt(s),
+        setSelectedStyleId: (id) =>
+          useSettingsStore.getState().setSelectedStyleId(id),
+        toastInfo: (msg) => toast.success(msg, { duration: 1500 }),
+        toastWarn: (msg) => toast.warning(msg, { duration: 3000 }),
+      }
+    );
   }
 
   const thumbJsx = cardSrc && fullSrc ? (
@@ -355,11 +374,17 @@ function EntryCard({
         </Button>
       </div>
 
-      {entry.prompt && (
+      {(entry.userPrompt ?? entry.prompt) && (
         <div className="mt-1 w-full">
           <p className="line-clamp-3 text-xs italic text-muted-foreground">
-            {entry.prompt}
+            {entry.userPrompt ?? entry.prompt}
           </p>
+          {entry.styleId && entry.styleId !== DEFAULT_STYLE_ID && (
+            <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Sparkles className="h-3 w-3" />
+              Стиль: {styles.find((s) => s.id === entry.styleId)?.name ?? entry.styleId}
+            </span>
+          )}
         </div>
       )}
 

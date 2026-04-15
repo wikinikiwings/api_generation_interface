@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, AlertCircle, History, ImageIcon, Trash2, X, Download, Copy } from "lucide-react";
+import { Loader2, AlertCircle, History, ImageIcon, Trash2, X, Download, Copy, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ImageDialog } from "@/components/image-dialog";
 import { usePromptStore } from "@/stores/prompt-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { cancelGeneration } from "@/components/generate-form";
 import { cn, copyToClipboard, startOfToday } from "@/lib/utils";
 import { useUser } from "@/app/providers/user-provider";
@@ -17,13 +18,16 @@ import {
 } from "@/lib/history";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
+import { DEFAULT_STYLE_ID, type Style } from "@/lib/styles/types";
+import { applyCopiedPrompt } from "@/lib/styles/apply-copied";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
   onToggleHistory: () => void;
+  styles: Style[];
 }
 
-export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
+export function OutputArea({ historyOpen, onToggleHistory, styles }: OutputAreaProps) {
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
     setMounted(true);
@@ -116,6 +120,7 @@ export function OutputArea({ historyOpen, onToggleHistory }: OutputAreaProps) {
                 siblings={todayEntries}
                 index={idx}
                 onRemove={() => handleRemove(entry)}
+                styles={styles}
               />
             ))}
           </div>
@@ -132,9 +137,10 @@ interface OutputCardProps {
   /** This entry's index inside `siblings`. */
   index: number;
   onRemove: () => void;
+  styles: Style[];
 }
 
-function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
+function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProps) {
   const isDone = entry.status === "completed" && !!entry.outputUrl;
   const isError = entry.status === "failed";
   const isCancelled = entry.status === "cancelled";
@@ -321,14 +327,22 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
       ) : (
         card
       )}
-      {entry.prompt && (
+      {(entry.userPrompt ?? entry.prompt) && (
         <div className="flex w-full items-start gap-1.5 px-1">
-          <p
-            className="flex-1 line-clamp-3 text-xs italic text-muted-foreground"
-            title={entry.prompt}
-          >
-            {entry.prompt}
-          </p>
+          <div className="flex-1 min-w-0">
+            <p
+              className="line-clamp-3 text-xs italic text-muted-foreground"
+              title={entry.prompt}
+            >
+              {entry.userPrompt ?? entry.prompt}
+            </p>
+            {entry.styleId && entry.styleId !== DEFAULT_STYLE_ID && (
+              <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                <Sparkles className="h-3 w-3" />
+                Стиль: {styles.find((s) => s.id === entry.styleId)?.name ?? entry.styleId}
+              </span>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="icon"
@@ -337,10 +351,22 @@ function OutputCard({ entry, siblings, index, onRemove }: OutputCardProps) {
               e.stopPropagation();
               e.preventDefault();
               const ok = await copyToClipboard(entry.prompt);
-              if (ok) {
-                usePromptStore.getState().setPrompt(entry.prompt);
-                toast.success("Промпт применён и скопирован", { duration: 1500 });
-              }
+              if (!ok) return;
+              applyCopiedPrompt(
+                {
+                  prompt: entry.prompt,
+                  userPrompt: entry.userPrompt,
+                  styleId: entry.styleId,
+                },
+                styles,
+                {
+                  setPrompt: (s) => usePromptStore.getState().setPrompt(s),
+                  setSelectedStyleId: (id) =>
+                    useSettingsStore.getState().setSelectedStyleId(id),
+                  toastInfo: (msg) => toast.success(msg, { duration: 1500 }),
+                  toastWarn: (msg) => toast.warning(msg, { duration: 3000 }),
+                }
+              );
             }}
             title="Скопировать промпт"
             aria-label="Copy prompt"

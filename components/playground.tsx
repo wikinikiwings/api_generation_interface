@@ -193,8 +193,9 @@ export function Playground() {
           <OutputArea
             historyOpen={historyOpen}
             onToggleHistory={() => setHistoryOpen((v) => !v)}
+            styles={styles}
           />
-          <HistorySidebar open={historyOpen} setOpen={setHistoryOpen} />
+          <HistorySidebar open={historyOpen} setOpen={setHistoryOpen} styles={styles} />
         </section>
       </main>
     </div>
