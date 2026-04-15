@@ -26,6 +26,18 @@ function loadModel(): ModelId {
   return "nano-banana-2";
 }
 
+const STYLE_LS_KEY = "wavespeed:selectedStyle:v1";
+const DEFAULT_STYLE_ID = "__default__";
+
+function loadStyleId(): string {
+  if (typeof window === "undefined") return DEFAULT_STYLE_ID;
+  try {
+    const v = window.localStorage.getItem(STYLE_LS_KEY);
+    if (typeof v === "string" && v.length > 0) return v;
+  } catch {}
+  return DEFAULT_STYLE_ID;
+}
+
 /**
  * App settings store — server-hydrated.
  *
@@ -56,6 +68,14 @@ interface SettingsState {
   hydrateUserModel: (username: string) => Promise<void>;
   updateSelectedProvider: (id: ProviderId) => Promise<void>;
   setSelectedModel: (id: ModelId, username?: string | null) => void;
+  selectedStyleId: string;
+  setSelectedStyleId: (id: string) => void;
+  /**
+   * If the currently-selected style id is not in `knownIds`, reset to the
+   * default. Called by the generation form after loading /api/styles, so a
+   * style deleted in the admin silently stops applying. No-op otherwise.
+   */
+  reconcileSelectedStyle: (knownIds: readonly string[]) => void;
   /**
    * Start polling /api/settings every 30s + on visibilitychange. Returns
    * a cleanup function. Idempotent within a single component lifecycle:
@@ -76,6 +96,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()((set, get) => ({
   selectedProvider: "wavespeed",
   selectedModel: loadModel(),
+  selectedStyleId: loadStyleId(),
   isHydrated: false,
 
   setSelectedModel: (id, username) => {
@@ -97,6 +118,19 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
         console.warn("[settings] failed to persist selectedModel:", err);
       });
     }
+  },
+
+  setSelectedStyleId: (id) => {
+    set({ selectedStyleId: id });
+    try { window.localStorage.setItem(STYLE_LS_KEY, id); } catch {}
+  },
+
+  reconcileSelectedStyle: (knownIds) => {
+    const current = get().selectedStyleId;
+    if (current === DEFAULT_STYLE_ID) return;
+    if (knownIds.includes(current)) return;
+    set({ selectedStyleId: DEFAULT_STYLE_ID });
+    try { window.localStorage.setItem(STYLE_LS_KEY, DEFAULT_STYLE_ID); } catch {}
   },
 
   /**
