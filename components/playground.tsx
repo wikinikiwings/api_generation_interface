@@ -182,7 +182,7 @@ export function Playground() {
               </div>
               <ThemeToggle />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-0">
               <GenerateForm styles={styles} />
             </div>
           </div>

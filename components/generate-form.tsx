@@ -628,7 +628,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
           form area so it's always reachable regardless of form length. The
           negative margins bleed the background color to the card edges,
           counteracting the scroll-container's p-5 padding. */}
-      <div className="sticky bottom-0 -mx-5 -mb-5 mt-auto border-t border-border bg-background px-5 py-2">
+      <div className="sticky bottom-0 -mx-5 mt-auto flex items-center border-t border-border bg-background px-5 py-0.5">
         <Button
           type="submit"
           size="lg"
