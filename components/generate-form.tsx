@@ -17,7 +17,8 @@ import { createImageVariants } from "@/lib/image-variants";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
 import { cacheBlob } from "@/lib/image-cache";
 import { composeFinalPrompt } from "@/lib/styles/inject";
-import { DEFAULT_STYLE_ID, type Style } from "@/lib/styles/types";
+import { type Style } from "@/lib/styles/types";
+import { StylesMultiSelect } from "@/components/styles-multi-select";
 import {
   addPendingEntry,
   updateEntry,
@@ -142,20 +143,11 @@ export function GenerateForm({ styles }: GenerateFormProps) {
   const selectedStyleIds = useSettingsStore((s) => s.selectedStyleIds);
   const setSelectedStyleIds = useSettingsStore((s) => s.setSelectedStyleIds);
 
-  // Adapter for the current single-Select UI. Task 4 replaces the Select
-  // with a real multi-select; until then, we treat the first array element
-  // as the single selection and write back as a zero- or one-element array.
-  const selectedStyleId = selectedStyleIds[0] ?? DEFAULT_STYLE_ID;
-  const setSelectedStyleId = React.useCallback(
-    (id: string) =>
-      setSelectedStyleIds(id === DEFAULT_STYLE_ID ? [] : [id]),
-    [setSelectedStyleIds]
-  );
-
-  const activeStyle = React.useMemo<Style | null>(() => {
-    if (selectedStyleId === DEFAULT_STYLE_ID) return null;
-    return styles.find((s) => s.id === selectedStyleId) ?? null;
-  }, [styles, selectedStyleId]);
+  const activeStyles = React.useMemo<Style[]>(() => {
+    return selectedStyleIds
+      .map((id) => styles.find((s) => s.id === id))
+      .filter((s): s is Style => s !== undefined);
+  }, [styles, selectedStyleIds]);
 
   const { username } = useUser();
   const prompt = usePromptStore((s) => s.prompt);
@@ -259,9 +251,9 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         hasImages ? "edit" : "t2i"
       }`;
       const promptPayload = {
-        prompt: composeFinalPrompt(prompt.trim(), activeStyle ? [activeStyle] : []),
+        prompt: composeFinalPrompt(prompt.trim(), activeStyles),
         userPrompt: prompt.trim(),
-        styleIds: activeStyle ? [activeStyle.id] : [],
+        styleIds: activeStyles.map((s) => s.id),
         resolution: hasResolutions ? resolution : undefined,
         aspectRatio: aspectRatio || undefined,
         outputFormat,
@@ -439,9 +431,9 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       taskId: "",
       provider: activeProvider,
       model: getModelString(activeProvider, selectedModel, images.length > 0),
-      prompt: composeFinalPrompt(prompt.trim(), activeStyle ? [activeStyle] : []),
+      prompt: composeFinalPrompt(prompt.trim(), activeStyles),
       userPrompt: prompt.trim(),
-      styleIds: activeStyle ? [activeStyle.id] : [],
+      styleIds: activeStyles.map((s) => s.id),
       resolution,
       aspectRatio: (aspectRatio || undefined) as AspectRatio | undefined,
       outputFormat,
@@ -466,7 +458,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         body: JSON.stringify({
           provider: activeProvider,
           modelId: selectedModel,
-          prompt: composeFinalPrompt(prompt.trim(), activeStyle ? [activeStyle] : []),
+          prompt: composeFinalPrompt(prompt.trim(), activeStyles),
           images: images.map((i) => i.dataUrl),
           // Compute source aspect from the FIRST image, if any. Seedream
           // providers use this when the user picked "Auto (match input)".
@@ -588,7 +580,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {hasResolutions && (
         <div className="space-y-1.5">
           <Label htmlFor="resolution">Разрешение</Label>
@@ -620,18 +612,16 @@ export function GenerateForm({ styles }: GenerateFormProps) {
           />
         </div>
         )}
-        <div className="space-y-1.5">
-          <Label htmlFor="style">Стиль</Label>
-          <Select
-            id="style"
-            value={selectedStyleId}
-            onChange={(e) => setSelectedStyleId(e.target.value)}
-            options={[
-              { value: DEFAULT_STYLE_ID, label: "Стандартный" },
-              ...styles.map((s) => ({ value: s.id, label: s.name })),
-            ]}
-          />
-        </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="style">Стиль</Label>
+        <StylesMultiSelect
+          id="style"
+          styles={styles}
+          selectedIds={selectedStyleIds}
+          onChange={setSelectedStyleIds}
+        />
       </div>
 
       {/* Sticky Generate button — pinned to the bottom of the scrollable
