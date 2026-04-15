@@ -80,6 +80,8 @@ export interface NewPendingInput {
   uuid: string;                                       // becomes HistoryEntry.id
   taskId?: string;
   prompt: string;
+  userPrompt?: string;
+  styleId?: string;
   provider: ProviderId;
   model?: string;
   workflowName?: string;

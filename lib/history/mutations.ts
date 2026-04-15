@@ -149,6 +149,8 @@ export function addPendingEntry(input: NewPendingInput): void {
     state: "pending",
     confirmed: false,
     prompt: input.prompt,
+    userPrompt: input.userPrompt,
+    styleId: input.styleId,
     provider: input.provider,
     model: input.model,
     workflowName: input.workflowName,
