@@ -91,7 +91,7 @@ describe("styles store", () => {
     await new Promise((r) => setTimeout(r, 5));
     const b = await createStyle({ name: "b", prefix: "", suffix: "" });
     const list = await listStyles();
-    expect(list.map((s) => s.id)).toEqual([a.id, b.id]);
+    expect(list.map((s: { id: string }) => s.id)).toEqual([a.id, b.id]);
   });
 
   it("getStyle returns null for a missing id", async () => {
@@ -152,6 +152,6 @@ describe("styles store", () => {
     const badPath = path.join(tmpDir, "styles", "broken.json");
     fs.writeFileSync(badPath, "{not-json");
     const list = await listStyles();
-    expect(list.map((s) => s.id)).toEqual([good.id]);
+    expect(list.map((s: { id: string }) => s.id)).toEqual([good.id]);
   });
 });
