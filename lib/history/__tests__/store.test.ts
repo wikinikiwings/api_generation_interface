@@ -99,7 +99,20 @@ describe("applyServerRow", () => {
     expect(entry.outputUrl).toBe("blob:y");
   });
 
-  it("hydrates userPrompt and styleId from prompt_data when present", () => {
+  it("hydrates userPrompt and styleIds from prompt_data when array present", () => {
+    const row = mkRow({
+      prompt_data: JSON.stringify({
+        prompt: "cinematic. a cat. 35mm",
+        userPrompt: "a cat",
+        styleIds: ["kino-a3f", "3d-b12"],
+      }),
+    });
+    const entry = serverGenToEntry(row, "uuid-1");
+    expect(entry.userPrompt).toBe("a cat");
+    expect(entry.styleIds).toEqual(["kino-a3f", "3d-b12"]);
+  });
+
+  it("coerces legacy styleId (non-default) to a single-element styleIds array", () => {
     const row = mkRow({
       prompt_data: JSON.stringify({
         prompt: "cinematic. a cat. 35mm",
@@ -107,20 +120,26 @@ describe("applyServerRow", () => {
         styleId: "kino-a3f",
       }),
     });
-    const entry = serverGenToEntry(row, "uuid-1");
-    expect(entry.prompt).toBe("cinematic. a cat. 35mm");
-    expect(entry.userPrompt).toBe("a cat");
-    expect(entry.styleId).toBe("kino-a3f");
+    const entry = serverGenToEntry(row, "uuid-2");
+    expect(entry.styleIds).toEqual(["kino-a3f"]);
   });
 
-  it("leaves userPrompt and styleId undefined for pre-feature entries", () => {
+  it("coerces legacy styleId === '__default__' to an empty styleIds array", () => {
     const row = mkRow({
-      prompt_data: JSON.stringify({ prompt: "a cat" }),
+      prompt_data: JSON.stringify({
+        prompt: "a cat",
+        userPrompt: "a cat",
+        styleId: "__default__",
+      }),
     });
-    const entry = serverGenToEntry(row, "uuid-2");
-    expect(entry.prompt).toBe("a cat");
-    expect(entry.userPrompt).toBeUndefined();
-    expect(entry.styleId).toBeUndefined();
+    const entry = serverGenToEntry(row, "uuid-3");
+    expect(entry.styleIds).toEqual([]);
+  });
+
+  it("leaves styleIds undefined for pre-feature entries", () => {
+    const row = mkRow({ prompt_data: JSON.stringify({ prompt: "a cat" }) });
+    const entry = serverGenToEntry(row, "uuid-4");
+    expect(entry.styleIds).toBeUndefined();
   });
 });
 

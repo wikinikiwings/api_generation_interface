@@ -18,8 +18,8 @@ import {
 } from "@/lib/history";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
-import { DEFAULT_STYLE_ID, type Style } from "@/lib/styles/types";
-import { applyCopiedPrompt } from "@/lib/styles/apply-copied";
+import { type Style } from "@/lib/styles/types";
+import { applyCopiedPrompt, joinStyleNames } from "@/lib/styles/apply-copied";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -336,10 +336,10 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
             >
               {entry.userPrompt ?? entry.prompt}
             </p>
-            {entry.styleId && entry.styleId !== DEFAULT_STYLE_ID && (
+            {entry.styleIds && entry.styleIds.length > 0 && (
               <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Sparkles className="h-3 w-3" />
-                Стиль: {styles.find((s) => s.id === entry.styleId)?.name ?? entry.styleId}
+                {entry.styleIds.length === 1 ? "Стиль" : "Стили"}: {joinStyleNames(entry.styleIds, styles)}
               </span>
             )}
           </div>
@@ -356,15 +356,13 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
                 {
                   prompt: entry.prompt,
                   userPrompt: entry.userPrompt,
-                  styleId: entry.styleId,
+                  styleIds: entry.styleIds,
                 },
                 styles,
                 {
                   setPrompt: (s) => usePromptStore.getState().setPrompt(s),
-                  setSelectedStyleId: (id) =>
-                    useSettingsStore
-                      .getState()
-                      .setSelectedStyleIds(id === DEFAULT_STYLE_ID ? [] : [id]),
+                  setSelectedStyleIds: (ids) =>
+                    useSettingsStore.getState().setSelectedStyleIds(ids),
                   toastInfo: (msg) => toast.success(msg, { duration: 1500 }),
                   toastWarn: (msg) => toast.warning(msg, { duration: 3000 }),
                 }

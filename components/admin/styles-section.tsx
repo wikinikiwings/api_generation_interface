@@ -339,12 +339,14 @@ export function StylesSection() {
 }
 
 function previewFor(draft: Draft): string {
-  return composeFinalPrompt("<промпт пользователя>", {
-    id: "__preview__",
-    name: "",
-    prefix: draft.prefix,
-    suffix: draft.suffix,
-    createdAt: "",
-    updatedAt: "",
-  });
+  return composeFinalPrompt("<промпт пользователя>", [
+    {
+      id: "__preview__",
+      name: "",
+      prefix: draft.prefix,
+      suffix: draft.suffix,
+      createdAt: "",
+      updatedAt: "",
+    },
+  ]);
 }

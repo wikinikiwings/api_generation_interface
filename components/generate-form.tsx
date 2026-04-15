@@ -259,9 +259,9 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         hasImages ? "edit" : "t2i"
       }`;
       const promptPayload = {
-        prompt: composeFinalPrompt(prompt.trim(), activeStyle),
+        prompt: composeFinalPrompt(prompt.trim(), activeStyle ? [activeStyle] : []),
         userPrompt: prompt.trim(),
-        styleId: activeStyle ? activeStyle.id : DEFAULT_STYLE_ID,
+        styleIds: activeStyle ? [activeStyle.id] : [],
         resolution: hasResolutions ? resolution : undefined,
         aspectRatio: aspectRatio || undefined,
         outputFormat,
@@ -439,9 +439,9 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       taskId: "",
       provider: activeProvider,
       model: getModelString(activeProvider, selectedModel, images.length > 0),
-      prompt: composeFinalPrompt(prompt.trim(), activeStyle),
+      prompt: composeFinalPrompt(prompt.trim(), activeStyle ? [activeStyle] : []),
       userPrompt: prompt.trim(),
-      styleId: activeStyle ? activeStyle.id : DEFAULT_STYLE_ID,
+      styleIds: activeStyle ? [activeStyle.id] : [],
       resolution,
       aspectRatio: (aspectRatio || undefined) as AspectRatio | undefined,
       outputFormat,
@@ -466,7 +466,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         body: JSON.stringify({
           provider: activeProvider,
           modelId: selectedModel,
-          prompt: composeFinalPrompt(prompt.trim(), activeStyle),
+          prompt: composeFinalPrompt(prompt.trim(), activeStyle ? [activeStyle] : []),
           images: images.map((i) => i.dataUrl),
           // Compute source aspect from the FIRST image, if any. Seedream
           // providers use this when the user picked "Auto (match input)".

@@ -39,10 +39,9 @@ export interface HistoryEntry {
   /** Clean user-authored part of the prompt (before style wrapping).
    *  Undefined on pre-feature entries — consumers must fall back to `prompt`. */
   userPrompt?: string;
-
-  /** Id of the style applied at generation time (e.g. "kino-a3f" or
-   *  "__default__" for explicit no-op). Undefined on pre-feature entries. */
-  styleId?: string;
+  /** Ids of styles applied at generation. Undefined on pre-feature entries.
+   *  Empty array means explicit post-feature "Стандартный". */
+  styleIds?: string[];
   provider: ProviderId;
   model?: string;                                     // optional for cross-device entries
   workflowName?: string;
@@ -81,7 +80,7 @@ export interface NewPendingInput {
   taskId?: string;
   prompt: string;
   userPrompt?: string;
-  styleId?: string;
+  styleIds?: string[];
   provider: ProviderId;
   model?: string;
   workflowName?: string;

@@ -114,18 +114,27 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
   let prompt = "";
   let workflowName: string | undefined = row.workflow_name;
   let userPrompt: string | undefined;
-  let styleId: string | undefined;
+  let styleIds: string[] | undefined;
   try {
     const parsed = JSON.parse(row.prompt_data) as {
       prompt?: string;
       workflow?: string;
       userPrompt?: string;
       styleId?: string;
+      styleIds?: string[];
     };
     prompt = parsed.prompt ?? "";
     workflowName = parsed.workflow ?? row.workflow_name;
     if (typeof parsed.userPrompt === "string") userPrompt = parsed.userPrompt;
-    if (typeof parsed.styleId === "string") styleId = parsed.styleId;
+    if (
+      Array.isArray(parsed.styleIds) &&
+      parsed.styleIds.every((x) => typeof x === "string")
+    ) {
+      styleIds = parsed.styleIds;
+    } else if (typeof parsed.styleId === "string") {
+      // Legacy single-style record: coerce to array.
+      styleIds = parsed.styleId === "__default__" ? [] : [parsed.styleId];
+    }
   } catch {
     // Malformed prompt_data — keep prompt as "".
   }
@@ -139,7 +148,7 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
     confirmed: true,
     prompt,
     userPrompt,
-    styleId,
+    styleIds,
     provider: "wavespeed",
     workflowName,
     outputFormat: inferOutputFormat(firstImage?.content_type, filename),
