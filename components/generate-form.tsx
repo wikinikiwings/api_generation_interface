@@ -566,7 +566,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex h-full flex-col gap-5">
+    <form onSubmit={handleSubmit} className="flex h-full flex-col gap-2">
       <ImageDropzone value={images} onChange={setImages} maxImages={14} />
 
       <div className="space-y-2">
@@ -628,7 +628,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
           form area so it's always reachable regardless of form length. The
           negative margins bleed the background color to the card edges,
           counteracting the scroll-container's p-5 padding. */}
-      <div className="sticky bottom-0 -mx-5 mt-auto flex items-center border-t border-border bg-background px-5 py-0.5">
+      <div className="sticky bottom-0 -mx-5 mt-auto flex items-center border-t border-border bg-background px-5 py-1">
         <Button
           type="submit"
           size="lg"
