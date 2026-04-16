@@ -154,9 +154,13 @@ export function StylesSection() {
         <h2 className="text-base font-semibold">Стили промпта</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Оборачивают промпт пользователя: <code>prefix</code>
-          {" + \". \" + промпт + \". \" + "}
-          <code>suffix</code>. Пустые части не вставляют разделитель. Стиль{" "}
-          <em>Стандартный</em> всегда доступен и ничего не меняет.
+          {" + перенос строки + промпт + перенос строки + "}
+          <code>suffix</code>. Переносы строк внутри части сохраняются; при
+          стеке нескольких стилей их <code>prefix</code>/<code>suffix</code>{" "}
+          разделяются пустой строкой. Enter в начале/конце части (через
+          Shift+Enter) добавляет лишнюю пустую строку на границе — так
+          можно «разлепить» промпт от своей подписи. Пустые части не
+          добавляют разделитель.
         </p>
       </div>
 
@@ -298,7 +302,7 @@ export function StylesSection() {
                 <div className="mb-1 text-xs font-medium text-muted-foreground">
                   Превью
                 </div>
-                <div className="rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs font-mono text-muted-foreground">
+                <div className="whitespace-pre-wrap rounded-md border border-dashed border-border bg-muted/30 p-3 text-xs font-mono text-muted-foreground">
                   {previewFor(draft)}
                 </div>
               </div>
