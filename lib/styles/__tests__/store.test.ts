@@ -75,14 +75,14 @@ describe("styles store", () => {
     ).rejects.toThrow(/80/);
   });
 
-  it("createStyle rejects prefix/suffix over 2000 chars", async () => {
+  it("createStyle rejects prefix/suffix over 5000 chars", async () => {
     const { createStyle } = await loadStore();
     await expect(
-      createStyle({ name: "ok", prefix: "a".repeat(2001), suffix: "" })
-    ).rejects.toThrow(/2000/);
+      createStyle({ name: "ok", prefix: "a".repeat(5001), suffix: "" })
+    ).rejects.toThrow(/5000/);
     await expect(
-      createStyle({ name: "ok", prefix: "", suffix: "a".repeat(2001) })
-    ).rejects.toThrow(/2000/);
+      createStyle({ name: "ok", prefix: "", suffix: "a".repeat(5001) })
+    ).rejects.toThrow(/5000/);
   });
 
   it("listStyles sorts by createdAt ascending", async () => {

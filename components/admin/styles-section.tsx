@@ -256,6 +256,7 @@ export function StylesSection() {
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   placeholder="Короткое имя стиля"
                 />
+                <CharCounter value={draft.name.length} max={STYLE_NAME_MAX} />
               </div>
 
               <div>
@@ -276,6 +277,7 @@ export function StylesSection() {
                   className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   placeholder="Что дописать ПЕРЕД промптом пользователя"
                 />
+                <CharCounter value={draft.prefix.length} max={STYLE_PART_MAX} />
               </div>
 
               <div>
@@ -296,6 +298,7 @@ export function StylesSection() {
                   className="w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   placeholder="Что дописать ПОСЛЕ промпта пользователя"
                 />
+                <CharCounter value={draft.suffix.length} max={STYLE_PART_MAX} />
               </div>
 
               <div>
@@ -353,4 +356,24 @@ function previewFor(draft: Draft): string {
       updatedAt: "",
     },
   ]);
+}
+
+function CharCounter({ value, max }: { value: number; max: number }) {
+  // Switch to a warning tone at 90% so the limit is visible before the
+  // browser silently caps further input.
+  const near = value >= max * 0.9;
+  const at = value >= max;
+  return (
+    <div
+      className={`mt-0.5 text-right text-[10px] tabular-nums ${
+        at
+          ? "font-medium text-destructive"
+          : near
+            ? "text-destructive/70"
+            : "text-muted-foreground/70"
+      }`}
+    >
+      {value} / {max}
+    </div>
+  );
 }
