@@ -10,6 +10,7 @@ import { usePromptStore } from "@/stores/prompt-store";
 import { composeFinalPrompt } from "@/lib/styles/inject";
 import { buildPreviewBlocks, STYLE_COLORS } from "@/lib/styles/preview";
 import type { Style } from "@/lib/styles/types";
+export { reorderStyleIds } from "@/lib/styles/reorder";
 
 interface PromptPreviewDialogProps {
   open: boolean;
