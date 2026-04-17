@@ -37,6 +37,11 @@ export function PromptPreviewDialog({
     [prompt, activeStyles]
   );
 
+  const finalPrompt = React.useMemo(
+    () => composeFinalPrompt(prompt, activeStyles),
+    [prompt, activeStyles]
+  );
+
   function toggle(id: string) {
     if (selectedStyleIds.includes(id)) {
       setSelectedStyleIds(selectedStyleIds.filter((x) => x !== id));
@@ -46,15 +51,13 @@ export function PromptPreviewDialog({
   }
 
   async function copyFinal() {
-    const final = composeFinalPrompt(prompt, activeStyles);
-    if (final.length === 0) return;
-    const ok = await copyToClipboard(final);
+    if (finalPrompt.length === 0) return;
+    const ok = await copyToClipboard(finalPrompt);
     if (ok) toast.success("Финальный промпт скопирован");
     else toast.error("Не удалось скопировать");
   }
 
-  const copyDisabled =
-    prompt.trim().length === 0 && activeStyles.length === 0;
+  const copyDisabled = finalPrompt.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -126,12 +129,12 @@ export function PromptPreviewDialog({
             </div>
 
             <div className="flex min-w-0 flex-col gap-2 md:overflow-y-auto md:pr-1">
-              {blocks.map((blk, i) => {
+              {blocks.map((blk) => {
                 if (blk.kind === "prompt") {
                   const empty = blk.text.trim().length === 0;
                   return (
                     <div
-                      key={i}
+                      key="prompt"
                       className="rounded-md border border-primary/40 bg-primary/5 p-2"
                     >
                       <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-primary">
@@ -154,7 +157,7 @@ export function PromptPreviewDialog({
                   STYLE_COLORS[blk.colorIndex! % STYLE_COLORS.length];
                 return (
                   <div
-                    key={i}
+                    key={`${blk.kind}:${blk.styleId}`}
                     className="flex gap-2 rounded-md border border-border bg-muted/20 p-2"
                   >
                     <div className={cn("w-1 shrink-0 rounded-sm", color)} />
