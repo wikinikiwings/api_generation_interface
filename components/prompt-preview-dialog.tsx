@@ -93,13 +93,12 @@ function SortableStyleRow({
         )}
       />
       <span
+        aria-hidden
         className={cn(
-          "ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[11px] font-semibold text-white",
+          "ml-2 h-6 w-6 shrink-0 rounded",
           STYLE_COLORS[colorIndex]
         )}
-      >
-        {order}
-      </span>
+      />
       <span className="min-w-0 flex-1 truncate px-2 py-1.5 text-sm">
         {style.name}
       </span>
