@@ -19,13 +19,14 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import {
+  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { reorderStyleIds } from "@/lib/styles/reorder";
+import { partitionStyles, type StyleZone } from "@/lib/styles/classify";
 
 interface PromptPreviewDialogProps {
   open: boolean;
@@ -108,6 +109,12 @@ function PlainStyleRow({ style, onToggle }: StyleRowProps) {
   );
 }
 
+const ZONE_META: Record<Exclude<StyleZone, "empty">, { title: string; caption: string }> = {
+  "attach-prefix": { title: "В начало", caption: "перед всем" },
+  wrap: { title: "Обёртка", caption: "матрёшка вокруг промта" },
+  "attach-suffix": { title: "В конец", caption: "после всего" },
+};
+
 export function PromptPreviewDialog({
   open,
   onOpenChange,
@@ -122,6 +129,11 @@ export function PromptPreviewDialog({
       .map((id) => styles.find((s) => s.id === id))
       .filter((s): s is Style => s !== undefined);
   }, [styles, selectedStyleIds]);
+
+  const partitioned = React.useMemo(
+    () => partitionStyles(activeStyles),
+    [activeStyles]
+  );
 
   const untickedStyles = React.useMemo<Style[]>(
     () => styles.filter((s) => !selectedStyleIds.includes(s.id)),
@@ -160,13 +172,16 @@ export function PromptPreviewDialog({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  function handleDragEnd(e: DragEndEvent) {
-    const next = reorderStyleIds(
-      selectedStyleIds,
-      String(e.active.id),
-      e.over ? String(e.over.id) : null
-    );
-    if (next) setSelectedStyleIds(next);
+  function makeZoneDragEnd(zoneIds: readonly string[]) {
+    return (e: DragEndEvent) => {
+      const { active, over } = e;
+      if (!over || active.id === over.id) return;
+      const oldIdx = zoneIds.indexOf(String(active.id));
+      const newIdx = zoneIds.indexOf(String(over.id));
+      if (oldIdx === -1 || newIdx === -1) return;
+      const reorderedZone = arrayMove(zoneIds.slice(), oldIdx, newIdx);
+      setSelectedStyleIds(mergeZoneReorder(selectedStyleIds, reorderedZone));
+    };
   }
 
   return (
@@ -175,35 +190,75 @@ export function PromptPreviewDialog({
         <DialogTitle>Превью промпта</DialogTitle>
 
         <div className="grid min-h-0 gap-4 overflow-y-auto md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] md:overflow-hidden">
-          {/* Left: styles list */}
-          <div className="flex flex-col gap-1 md:overflow-y-auto md:pr-2">
+          {/* Left: styles list, grouped into zones */}
+          <div className="flex flex-col gap-3 md:overflow-y-auto md:pr-2">
             {styles.length === 0 ? (
               <div className="px-2 py-1.5 text-xs text-muted-foreground">
                 Стилей пока нет. Создайте в админке.
               </div>
             ) : (
-              <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-                <SortableContext
-                  items={activeStyles.map((s) => s.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {activeStyles.map((s, i) => (
-                    <SortableStyleRow
-                      key={s.id}
-                      style={s}
-                      order={i + 1}
-                      onToggle={() => toggle(s.id)}
-                    />
-                  ))}
-                </SortableContext>
-                {untickedStyles.map((s) => (
-                  <PlainStyleRow
-                    key={s.id}
-                    style={s}
-                    onToggle={() => toggle(s.id)}
-                  />
-                ))}
-              </DndContext>
+              <>
+                {(["attach-prefix", "wrap", "attach-suffix"] as const).map(
+                  (zone) => {
+                    const zoneStyles =
+                      zone === "attach-prefix"
+                        ? partitioned.attachPrefix
+                        : zone === "wrap"
+                        ? partitioned.wrap
+                        : partitioned.attachSuffix;
+                    if (zoneStyles.length === 0) return null;
+                    const zoneIds = zoneStyles.map((s) => s.id);
+                    const meta = ZONE_META[zone];
+                    return (
+                      <div key={zone} className="flex flex-col gap-1">
+                        <div className="px-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            {meta.title}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground/70">
+                            {meta.caption}
+                          </div>
+                        </div>
+                        <DndContext
+                          sensors={sensors}
+                          onDragEnd={makeZoneDragEnd(zoneIds)}
+                        >
+                          <SortableContext
+                            items={zoneIds}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            {zoneStyles.map((s, i) => (
+                              <SortableStyleRow
+                                key={s.id}
+                                style={s}
+                                order={i + 1}
+                                onToggle={() => toggle(s.id)}
+                              />
+                            ))}
+                          </SortableContext>
+                        </DndContext>
+                      </div>
+                    );
+                  }
+                )}
+
+                {untickedStyles.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    {activeStyles.length > 0 && (
+                      <div className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Доступны
+                      </div>
+                    )}
+                    {untickedStyles.map((s) => (
+                      <PlainStyleRow
+                        key={s.id}
+                        style={s}
+                        onToggle={() => toggle(s.id)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             {selectedStyleIds.length > 3 && (
               <div className="mt-1 px-2 text-[11px] text-muted-foreground">
