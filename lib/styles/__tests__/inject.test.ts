@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeFinalPrompt } from "../inject";
+import { composeFinalPrompt, softTrim } from "../inject";
 import type { Style } from "../types";
 
 function style(overrides: Partial<Style>): Style {
@@ -153,5 +153,13 @@ describe("composeFinalPrompt", () => {
     expect(
       composeFinalPrompt("", [style({ prefix: "cinematic", suffix: "35mm" })])
     ).toBe("cinematic\n\n35mm");
+  });
+});
+
+describe("softTrim", () => {
+  it("is exported and strips horizontal whitespace around newlines and at edges", () => {
+    expect(softTrim("  cinematic  \n")).toBe("cinematic\n");
+    expect(softTrim("\n 35mm ")).toBe("\n35mm");
+    expect(softTrim("line1 \n line2")).toBe("line1\nline2");
   });
 });

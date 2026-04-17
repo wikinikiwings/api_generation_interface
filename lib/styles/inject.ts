@@ -6,7 +6,7 @@ import { type Style } from "./types";
  * admin vertical-spacing control via Shift+Enter in the textarea while
  * still cleaning up stray spaces/tabs from copy-paste or accidental keys.
  */
-function softTrim(s: string): string {
+export function softTrim(s: string): string {
   return s
     .replace(/^[ \t]+/, "")
     .replace(/[ \t]+$/, "")
