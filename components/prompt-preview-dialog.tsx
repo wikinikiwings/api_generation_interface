@@ -164,10 +164,10 @@ export function PromptPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden rounded-lg border border-border bg-background p-5 shadow-xl">
+      <DialogContent className="h-[85vh] max-w-4xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-background p-5 shadow-xl">
         <DialogTitle>Превью промпта</DialogTitle>
 
-        <div className="grid gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] md:max-h-[70vh] md:overflow-hidden">
+        <div className="grid min-h-0 gap-4 overflow-y-auto md:grid-cols-[minmax(0,280px)_minmax(0,1fr)] md:overflow-hidden">
           {/* Left: styles list */}
           <div className="flex flex-col gap-1 md:overflow-y-auto md:pr-2">
             {styles.length === 0 ? (
