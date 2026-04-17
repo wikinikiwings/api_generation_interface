@@ -6,13 +6,15 @@
 - `docs/superpowers/specs/2026-04-15-prompt-styles-design.md` (single-style shipped 2026-04-15)
 - `docs/superpowers/specs/2026-04-15-prompt-styles-copy-unwrap-design.md` (copy-unwrap shipped 2026-04-15)
 
+**Revision 2026-04-17:** Matryoshka direction was flipped. `activeStyles[0]` (first-clicked) is now the **innermost** style — its prefix sits directly above userPrompt, its suffix directly below. `activeStyles[N-1]` (last-clicked) is the **outermost**. Rationale: when users saw the new `PromptPreviewDialog` render stacked prefixes/suffixes, the original "first-clicked = outermost" convention felt backwards — number badges 1..N read more naturally as "1 = primary/closest, N = outer shell". Sections below that describe the composition and wrapping order have been updated in-place to reflect the new direction. See commit `ee25866`.
+
 ## Problem
 
 Users want to combine multiple styles on a single generation (e.g. "Cinematic" base + "3D render" modifier + "storm weather" detail). Single-style selection caps expressiveness; users naturally reach for layered looks.
 
 ## Goal
 
-Multi-select dropdown where each style row has a checkbox. Ticking adds an order number (1, 2, 3, …) reflecting click order. Unticking renumbers. Combined prompt wraps user text matryoshka-style — outermost style added to its prefix first and its suffix last, innermost style closest to the user text on both sides. Soft warning above 3 selected styles.
+Multi-select dropdown where each style row has a checkbox. Ticking adds an order number (1, 2, 3, …) reflecting click order. Unticking renumbers. Combined prompt wraps user text matryoshka-style — first-clicked (slot 1) is innermost and sits closest to the user prompt on both sides; each subsequent click adds an outer layer. Soft warning above 3 selected styles.
 
 Back-compat: pre-feature entries and single-style records (from the just-shipped feature) continue to work via graceful fallback.
 
@@ -137,12 +139,12 @@ export function composeFinalPrompt(
 ): string {
   if (activeStyles.length === 0) return userPrompt;
 
-  const prefixes = activeStyles
+  const prefixes = [...activeStyles]
+    .reverse()
     .map((s) => (s.prefix ?? "").trim())
     .filter((p) => p.length > 0);
 
-  const suffixes = [...activeStyles]
-    .reverse()
+  const suffixes = activeStyles
     .map((s) => (s.suffix ?? "").trim())
     .filter((s) => s.length > 0);
 
@@ -156,11 +158,11 @@ export function composeFinalPrompt(
 
 Given `activeStyles = [s1, s2, s3]` (in click order):
 
-- Output shape: `p1. p2. p3. userPrompt. s3. s2. s1.`
-- `s1` is the **outermost** style — its prefix comes first, its suffix comes last.
-- `s3` is the **innermost** — its prefix last before the user prompt, its suffix first after.
+- Output shape: `p3. p2. p1. userPrompt. s1. s2. s3.`
+- `s1` (first clicked) is the **innermost** style — its prefix sits directly before the user prompt, its suffix directly after.
+- `s3` (last clicked) is the **outermost** — its prefix comes first on top, its suffix comes last at the bottom.
 
-Rationale: pick-order reads as "main style → refining modifier". Outer layer dominates token positions at both ends.
+Rationale: pick-order reads as "primary style → outer modifier". The first click is the style the user commits to; each subsequent click layers an outer context around it. Number badges 1..N then naturally read as "1 = closest/primary, N = outer shell".
 
 ### Edge cases
 
@@ -273,6 +275,6 @@ Prompt display text (`entry.userPrompt ?? entry.prompt`) is unchanged.
 None at brainstorming close. All five clarifications resolved:
 1. UI: checkbox dropdown with order numbers, moved to second row.
 2. Max styles: soft warning above 3, no hard cap.
-3. Order: matryoshka — outermost click dominates both ends.
+3. Order: matryoshka — first click (innermost) is closest to the user prompt; each subsequent click adds an outer layer. (See 2026-04-17 revision note at the top of this doc.)
 4. Deleted style on copy: full fallback (variant A).
 5. Display: names joined with " + " in both trigger and badge; "Стиль/Стили" noun per count.
