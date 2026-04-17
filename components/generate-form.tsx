@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Sparkles, Loader2, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, Label } from "@/components/ui/select";
 import { ImageDropzone, type DroppedImage } from "@/components/image-dropzone";
+import { PromptPreviewDialog } from "@/components/prompt-preview-dialog";
 import { useSettingsStore } from "@/stores/settings-store";
 import { usePromptStore } from "@/stores/prompt-store";
 import { MODELS_META } from "@/lib/providers/models";
@@ -176,6 +177,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
   // optional UI indicator (e.g. spinner badge) and to know whether ANY
   // generation is currently running.
   const [activeCount, setActiveCount] = React.useState(0);
+  const [previewOpen, setPreviewOpen] = React.useState(false);
 
   // Local helpers that route to the unified history module.
   const addHistory = (entry: NewPendingInput) => addPendingEntry(entry);
@@ -581,7 +583,19 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="style">Стиль</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="style">Стиль</Label>
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            className="flex items-center gap-1 rounded px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            aria-label="Открыть превью итогового промпта"
+            title="Превью итогового промпта"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Превью
+          </button>
+        </div>
         <StylesMultiSelect
           id="style"
           styles={styles}
@@ -640,6 +654,12 @@ export function GenerateForm({ styles }: GenerateFormProps) {
             : "Сгенерировать"}
         </Button>
       </div>
+
+      <PromptPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        styles={styles}
+      />
     </form>
   );
 }
