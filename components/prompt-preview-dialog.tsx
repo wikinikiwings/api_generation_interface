@@ -10,11 +10,98 @@ import { usePromptStore } from "@/stores/prompt-store";
 import { composeFinalPrompt } from "@/lib/styles/inject";
 import { buildPreviewBlocks, STYLE_COLORS } from "@/lib/styles/preview";
 import type { Style } from "@/lib/styles/types";
+import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { reorderStyleIds } from "@/lib/styles/reorder";
 
 interface PromptPreviewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   styles: Style[];
+}
+
+interface StyleRowProps {
+  style: Style;
+  onToggle: () => void;
+}
+
+function SortableStyleRow({
+  style,
+  order,
+  onToggle,
+}: StyleRowProps & { order: number }) {
+  const {
+    setNodeRef,
+    attributes,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: style.id });
+
+  const dragStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={dragStyle}
+      role="menuitemcheckbox"
+      aria-checked
+      className={cn(
+        "flex items-center gap-1 rounded-md bg-primary/5 transition-colors",
+        isDragging && "z-10 opacity-50"
+      )}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        title="Потяни чтобы изменить порядок"
+        aria-label={`Позиция ${order}. Потяни чтобы изменить порядок`}
+        className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center rounded border border-primary bg-primary text-[11px] font-semibold text-primary-foreground active:cursor-grabbing"
+      >
+        {order}
+      </button>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+      >
+        <span className="truncate">{style.name}</span>
+      </button>
+    </div>
+  );
+}
+
+function PlainStyleRow({ style, onToggle }: StyleRowProps) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      role="menuitemcheckbox"
+      aria-checked={false}
+      className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+    >
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-muted-foreground/40 text-[10px]" />
+      <span className="truncate">{style.name}</span>
+    </button>
+  );
 }
 
 export function PromptPreviewDialog({
@@ -31,6 +118,11 @@ export function PromptPreviewDialog({
       .map((id) => styles.find((s) => s.id === id))
       .filter((s): s is Style => s !== undefined);
   }, [styles, selectedStyleIds]);
+
+  const untickedStyles = React.useMemo<Style[]>(
+    () => styles.filter((s) => !selectedStyleIds.includes(s.id)),
+    [styles, selectedStyleIds]
+  );
 
   const blocks = React.useMemo(
     () => buildPreviewBlocks(prompt, activeStyles),
@@ -59,6 +151,20 @@ export function PromptPreviewDialog({
 
   const copyDisabled = finalPrompt.length === 0;
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  function handleDragEnd(e: DragEndEvent) {
+    const next = reorderStyleIds(
+      selectedStyleIds,
+      String(e.active.id),
+      e.over ? String(e.over.id) : null
+    );
+    if (next) setSelectedStyleIds(next);
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden rounded-lg border border-border bg-background p-5 shadow-xl">
@@ -72,36 +178,28 @@ export function PromptPreviewDialog({
                 Стилей пока нет. Создайте в админке.
               </div>
             ) : (
-              styles.map((s) => {
-                const idx = selectedStyleIds.indexOf(s.id);
-                const checked = idx !== -1;
-                const order = checked ? idx + 1 : null;
-                return (
-                  <button
+              <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+                <SortableContext
+                  items={activeStyles.map((s) => s.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {activeStyles.map((s, i) => (
+                    <SortableStyleRow
+                      key={s.id}
+                      style={s}
+                      order={i + 1}
+                      onToggle={() => toggle(s.id)}
+                    />
+                  ))}
+                </SortableContext>
+                {untickedStyles.map((s) => (
+                  <PlainStyleRow
                     key={s.id}
-                    type="button"
-                    onClick={() => toggle(s.id)}
-                    className={cn(
-                      "flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
-                      checked && "bg-primary/5"
-                    )}
-                    role="menuitemcheckbox"
-                    aria-checked={checked}
-                  >
-                    <span
-                      className={cn(
-                        "flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] font-semibold",
-                        checked
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-muted-foreground/40"
-                      )}
-                    >
-                      {order ?? ""}
-                    </span>
-                    <span className="truncate">{s.name}</span>
-                  </button>
-                );
-              })
+                    style={s}
+                    onToggle={() => toggle(s.id)}
+                  />
+                ))}
+              </DndContext>
             )}
             {selectedStyleIds.length > 3 && (
               <div className="mt-1 px-2 text-[11px] text-muted-foreground">
