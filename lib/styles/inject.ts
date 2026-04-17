@@ -1,4 +1,5 @@
 import { type Style } from "./types";
+import { partitionStyles } from "./classify";
 
 /**
  * Strip horizontal whitespace (spaces, tabs) at string edges and around
@@ -14,29 +15,19 @@ export function softTrim(s: string): string {
 }
 
 /**
- * Compose the final prompt sent to the generation API by wrapping the
- * user's prompt with the selected styles' prefixes and suffixes.
+ * Compose the final prompt sent to the generation API.
  *
- * Matryoshka layout for activeStyles = [s1, s2, s3]:
+ * Styles are classified by content:
+ *   - wrap (both prefix and suffix non-empty) → matryoshka in the middle,
+ *     slot-1 outermost, slot-N closest to userPrompt.
+ *   - attach-prefix (only prefix non-empty) → stacked above the wrap
+ *     prefixes, in click order (first-clicked reads first).
+ *   - attach-suffix (only suffix non-empty) → stacked below the wrap
+ *     suffixes, in click order (first-clicked reads first).
+ *   - empty → dropped.
  *
- *   p1
- *                  <— blank line between stacked styles
- *   p2
- *
- *   p3
- *   userPrompt     <— single newline around user prompt
- *   s3
- *
- *   s2
- *
- *   s1
- *
- * s1 is the outermost style (prefix first, suffix last); the last style
- * is innermost. Interior newlines inside a single part are preserved,
- * and admin-authored leading/trailing newlines bleed through too — they
- * add extra blank lines at the boundary with userPrompt or the next
- * stacked style, which is exactly the control knob Shift+Enter exposes
- * in the admin textarea.
+ * Separator policy is unchanged: "\n\n" between stacked blocks on the
+ * same side, "\n" around userPrompt.
  */
 export function composeFinalPrompt(
   userPrompt: string,
@@ -44,20 +35,23 @@ export function composeFinalPrompt(
 ): string {
   if (activeStyles.length === 0) return userPrompt;
 
-  const prefixes = activeStyles
-    .map((s) => softTrim(s.prefix ?? ""))
-    .filter((p) => /\S/.test(p));
+  const { attachPrefix, wrap, attachSuffix } = partitionStyles(activeStyles);
 
-  const suffixes = [...activeStyles]
-    .reverse()
-    .map((s) => softTrim(s.suffix ?? ""))
-    .filter((s) => /\S/.test(s));
+  const topBlocks: string[] = [
+    ...attachPrefix.map((s) => softTrim(s.prefix)),
+    ...wrap.map((s) => softTrim(s.prefix)),
+  ];
 
-  if (prefixes.length === 0 && suffixes.length === 0) return userPrompt;
+  const bottomBlocks: string[] = [
+    ...[...wrap].reverse().map((s) => softTrim(s.suffix)),
+    ...attachSuffix.map((s) => softTrim(s.suffix)),
+  ];
+
+  if (topBlocks.length === 0 && bottomBlocks.length === 0) return userPrompt;
 
   const segments: string[] = [];
-  if (prefixes.length > 0) segments.push(prefixes.join("\n\n"));
+  if (topBlocks.length > 0) segments.push(topBlocks.join("\n\n"));
   segments.push(userPrompt);
-  if (suffixes.length > 0) segments.push(suffixes.join("\n\n"));
+  if (bottomBlocks.length > 0) segments.push(bottomBlocks.join("\n\n"));
   return segments.join("\n");
 }

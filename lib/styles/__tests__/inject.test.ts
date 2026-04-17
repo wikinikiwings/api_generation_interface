@@ -119,15 +119,16 @@ describe("composeFinalPrompt", () => {
   });
 
   it("three styles — some parts empty, still filters correctly", () => {
-    // kino has both; threeD has only prefix; groza has only suffix.
+    // kino has both (wrap); threeD has only prefix (attach-prefix); groza has only suffix (attach-suffix).
+    // attach-prefix stacks above wrap prefixes; attach-suffix stacks below wrap suffixes.
+    // top: [threeD.prefix, kino.prefix] → "3d render\n\ncinematic"
+    // bottom: [kino.suffix, groza.suffix] → "35mm\n\nlightning"
     const kino = style({ id: "k", prefix: "cinematic", suffix: "35mm" });
     const threeD = style({ id: "3d", prefix: "3d render", suffix: "" });
     const groza = style({ id: "g", prefix: "", suffix: "lightning" });
-    // prefixes after filter joined: "cinematic\n\n3d render"
-    // suffixes reversed+filter joined: "lightning\n\n35mm"
     expect(
       composeFinalPrompt("a cat", [kino, threeD, groza])
-    ).toBe("cinematic\n\n3d render\na cat\nlightning\n\n35mm");
+    ).toBe("3d render\n\ncinematic\na cat\n35mm\n\nlightning");
   });
 
   it("three styles — all prefixes and suffixes empty: passthrough", () => {
@@ -153,6 +154,68 @@ describe("composeFinalPrompt", () => {
     expect(
       composeFinalPrompt("", [style({ prefix: "cinematic", suffix: "35mm" })])
     ).toBe("cinematic\n\n35mm");
+  });
+
+  it("attach-suffix lands after all wrap suffixes (very end of output)", () => {
+    const kino = style({ id: "k", prefix: "cinematic", suffix: "35mm" });
+    const neg = style({ id: "n", prefix: "", suffix: "low quality" });
+    expect(
+      composeFinalPrompt("a cat", [kino, neg])
+    ).toBe("cinematic\na cat\n35mm\n\nlow quality");
+  });
+
+  it("two attach-suffix styles stack in click order (first-clicked reads first)", () => {
+    const a = style({ id: "a", prefix: "", suffix: "tag-A" });
+    const b = style({ id: "b", prefix: "", suffix: "tag-B" });
+    expect(composeFinalPrompt("a cat", [a, b])).toBe(
+      "a cat\ntag-A\n\ntag-B"
+    );
+  });
+
+  it("two attach-prefix styles stack in click order (first-clicked reads first)", () => {
+    const a = style({ id: "a", prefix: "pre-A", suffix: "" });
+    const b = style({ id: "b", prefix: "pre-B", suffix: "" });
+    expect(composeFinalPrompt("a cat", [a, b])).toBe(
+      "pre-A\n\npre-B\na cat"
+    );
+  });
+
+  it("attach-prefix precedes wrap prefixes in the top block", () => {
+    const wrap = style({ id: "w", prefix: "cinematic", suffix: "35mm" });
+    const preOnly = style({ id: "p", prefix: "HEADER:", suffix: "" });
+    expect(
+      composeFinalPrompt("a cat", [wrap, preOnly])
+    ).toBe("HEADER:\n\ncinematic\na cat\n35mm");
+  });
+
+  it("mixed: attach-prefix, two wraps, attach-suffix — full layout", () => {
+    const preOnly = style({ id: "p", prefix: "HEADER:", suffix: "" });
+    const w1 = style({ id: "w1", prefix: "P1", suffix: "S1" });
+    const w2 = style({ id: "w2", prefix: "P2", suffix: "S2" });
+    const neg = style({ id: "n", prefix: "", suffix: "NEG" });
+    expect(
+      composeFinalPrompt("a cat", [preOnly, w1, w2, neg])
+    ).toBe("HEADER:\n\nP1\n\nP2\na cat\nS2\n\nS1\n\nNEG");
+  });
+
+  it("only attach styles (no wrap) — prefixes on top, suffixes at bottom", () => {
+    const p = style({ id: "p", prefix: "pre", suffix: "" });
+    const s = style({ id: "s", prefix: "", suffix: "post" });
+    expect(composeFinalPrompt("a cat", [p, s])).toBe(
+      "pre\na cat\npost"
+    );
+  });
+
+  it("regression: all-wrap output matches the old slot-1-outermost matryoshka", () => {
+    // Same input as the existing three-style matryoshka test; the rewrite
+    // must produce byte-identical output to lock in backward compatibility
+    // for users whose selections are entirely wrap styles.
+    const kino = style({ id: "k", prefix: "cinematic", suffix: "35mm" });
+    const threeD = style({ id: "3d", prefix: "3d render", suffix: "ray traced" });
+    const groza = style({ id: "g", prefix: "storm", suffix: "lightning" });
+    expect(composeFinalPrompt("a cat", [kino, threeD, groza])).toBe(
+      "cinematic\n\n3d render\n\nstorm\na cat\nlightning\n\nray traced\n\n35mm"
+    );
   });
 });
 
