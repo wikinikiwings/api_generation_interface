@@ -109,6 +109,9 @@ function PlainStyleRow({ style, onToggle }: StyleRowProps) {
   );
 }
 
+const MAX_INDENT_DEPTH = 5;
+const INDENT_PX_PER_LEVEL = 12;
+
 const ZONE_META: Record<Exclude<StyleZone, "empty">, { title: string; caption: string }> = {
   "attach-prefix": { title: "В начало", caption: "перед всем" },
   wrap: { title: "Обёртка", caption: "матрёшка вокруг промта" },
@@ -289,10 +292,12 @@ export function PromptPreviewDialog({
               {blocks.map((blk) => {
                 if (blk.kind === "prompt") {
                   const empty = blk.text.trim().length === 0;
+                  const indentPx = Math.min(blk.depth, MAX_INDENT_DEPTH) * INDENT_PX_PER_LEVEL;
                   return (
                     <div
                       key="prompt"
                       className="rounded-md border border-primary/40 bg-primary/5 p-2"
+                      style={{ marginLeft: indentPx }}
                     >
                       <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-primary">
                         Промпт
@@ -312,10 +317,12 @@ export function PromptPreviewDialog({
 
                 const color =
                   STYLE_COLORS[blk.colorIndex! % STYLE_COLORS.length];
+                const indentPx = Math.min(blk.depth, MAX_INDENT_DEPTH) * INDENT_PX_PER_LEVEL;
                 return (
                   <div
                     key={`${blk.kind}:${blk.styleId}`}
                     className="flex gap-2 rounded-md border border-border bg-muted/20 p-2"
+                    style={{ marginLeft: indentPx }}
                   >
                     <div className={cn("w-1 shrink-0 rounded-sm", color)} />
                     <div className="min-w-0 flex-1">
