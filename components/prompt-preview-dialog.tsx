@@ -38,6 +38,15 @@ interface StyleRowProps {
   onToggle: () => void;
 }
 
+export function mergeZoneReorder(
+  flat: readonly string[],
+  reorderedZoneIds: readonly string[]
+): string[] {
+  const zoneSet = new Set(reorderedZoneIds);
+  const iter = reorderedZoneIds[Symbol.iterator]();
+  return flat.map((id) => (zoneSet.has(id) ? iter.next().value! : id));
+}
+
 function SortableStyleRow({
   style,
   order,
