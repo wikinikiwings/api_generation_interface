@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reorderStyleIds } from "../prompt-preview-dialog";
+import { reorderStyleIds } from "@/lib/styles/reorder";
 
 describe("reorderStyleIds", () => {
   it("returns null when overId is null (drop outside)", () => {
