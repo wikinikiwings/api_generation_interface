@@ -61,25 +61,23 @@ function SortableStyleRow({
     <div
       ref={setNodeRef}
       style={dragStyle}
+      {...attributes}
+      {...listeners}
+      aria-label={`${style.name}, позиция ${order}. Потяни чтобы изменить порядок`}
+      title="Потяни чтобы изменить порядок"
       className={cn(
-        "flex items-center gap-1 rounded-md bg-primary/5 transition-colors",
+        "flex items-center gap-1 rounded-md bg-primary/5 cursor-grab transition-colors active:cursor-grabbing",
         isDragging && "z-10 opacity-50"
       )}
     >
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        title="Потяни чтобы изменить порядок"
-        aria-label={`${style.name}, позиция ${order}. Потяни чтобы изменить порядок`}
-        className="flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded border border-primary bg-primary text-[11px] font-semibold text-primary-foreground active:cursor-grabbing"
-      >
+      <span className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded border border-primary bg-primary text-[11px] font-semibold text-primary-foreground">
         {order}
-      </button>
+      </span>
       <button
         type="button"
         onClick={onToggle}
         aria-pressed={true}
+        aria-label={`Снять стиль ${style.name}`}
         className="flex min-w-0 flex-1 items-center rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
       >
         <span className="truncate">{style.name}</span>
