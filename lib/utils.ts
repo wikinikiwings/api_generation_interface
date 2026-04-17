@@ -130,22 +130,53 @@ export function startOfToday(): number {
   return d.getTime();
 }
 
-/** Copy text to clipboard with fallback for older browsers. */
+/**
+ * Copy text to clipboard with a robust fallback for non-secure contexts.
+ *
+ * The modern `navigator.clipboard.writeText` API is only available in
+ * secure contexts (HTTPS or localhost/127.0.0.1). On a LAN dev URL like
+ * `http://192.168.x.x:3000` it is undefined, and we fall through to
+ * `execCommand("copy")` on a temporary textarea.
+ *
+ * The fallback appends the textarea inside the currently-open Radix
+ * Dialog if there is one (not `document.body`). Radix's FocusScope
+ * on an open dialog traps focus — appending to body lets Radix bounce
+ * focus back inside the dialog the moment `ta.focus()` fires, which
+ * drops the textarea's selection. `execCommand("copy")` then returns
+ * `true` (command dispatched) but copies nothing, and the caller sees
+ * a successful toast with an empty clipboard. Appending inside the
+ * dialog keeps the textarea within the focus scope so the selection
+ * actually sticks.
+ */
 export async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
+  if (
+    typeof window !== "undefined" &&
+    window.isSecureContext &&
+    navigator.clipboard?.writeText
+  ) {
+    try {
       await navigator.clipboard.writeText(text);
       return true;
+    } catch {
+      // Permission denied or document not focused — fall through.
     }
-    // Fallback
+  }
+
+  try {
+    const host =
+      document.querySelector<HTMLElement>('[role="dialog"]') ?? document.body;
     const ta = document.createElement("textarea");
     ta.value = text;
+    ta.setAttribute("readonly", "");
     ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "-9999px";
     ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
+    host.appendChild(ta);
+    ta.focus();
+    ta.setSelectionRange(0, text.length);
     const ok = document.execCommand("copy");
-    document.body.removeChild(ta);
+    host.removeChild(ta);
     return ok;
   } catch {
     return false;
