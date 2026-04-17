@@ -588,9 +588,11 @@ export function GenerateForm({ styles }: GenerateFormProps) {
           <button
             type="button"
             onClick={() => setPreviewOpen(true)}
-            className="flex items-center gap-1 rounded px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            aria-haspopup="dialog"
+            aria-expanded={previewOpen}
             aria-label="Открыть превью итогового промпта"
             title="Превью итогового промпта"
+            className="flex items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             <Eye className="h-3.5 w-3.5" />
             Превью
