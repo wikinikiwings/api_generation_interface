@@ -57,19 +57,19 @@ describe("buildPreviewBlocks", () => {
     ]);
   });
 
-  it("three styles — matryoshka order: prefixes N-1..0 (outer first), prompt, suffixes 0..N-1 (inner first)", () => {
+  it("three styles — matryoshka order: prefixes 0..N-1, prompt, suffixes N-1..0", () => {
     const a = style({ id: "a", name: "A", prefix: "PA", suffix: "SA" });
     const b = style({ id: "b", name: "B", prefix: "PB", suffix: "SB" });
     const c = style({ id: "c", name: "C", prefix: "PC", suffix: "SC" });
     const blocks = buildPreviewBlocks("x", [a, b, c]);
     expect(blocks.map((b) => [b.kind, b.styleId ?? "_", b.text])).toEqual([
-      ["prefix", "c", "PC"],
-      ["prefix", "b", "PB"],
       ["prefix", "a", "PA"],
+      ["prefix", "b", "PB"],
+      ["prefix", "c", "PC"],
       ["prompt", "_", "x"],
-      ["suffix", "a", "SA"],
-      ["suffix", "b", "SB"],
       ["suffix", "c", "SC"],
+      ["suffix", "b", "SB"],
+      ["suffix", "a", "SA"],
     ]);
   });
 

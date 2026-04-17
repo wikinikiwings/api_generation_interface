@@ -87,15 +87,11 @@ export function buildPreviewBlocks(
 ```
 
 Returns the ordered list of blocks to render top-to-bottom. Matryoshka
-order matches `composeFinalPrompt` in `lib/styles/inject.ts` (first-clicked
-is innermost, last-clicked is outermost — see the composeFinalPrompt
-JSDoc for the layout diagram):
+order matches `composeFinalPrompt` in `lib/styles/inject.ts`:
 
-- prefixes of `activeStyles[N-1]`, `[N-2]`, … `[0]` (outermost first, so
-  the last-clicked style's prefix sits on top)
+- prefixes of `activeStyles[0]`, `[1]`, … `[N-1]` (in index order)
 - the user-prompt block
-- suffixes of `activeStyles[0]`, `[1]`, … `[N-1]` (innermost first, so
-  the first-clicked style's suffix sits directly under userPrompt)
+- suffixes of `activeStyles[N-1]`, `[N-2]`, … `[0]` (reversed)
 
 Blocks whose text is empty after `softTrim` are omitted (same rule as
 `composeFinalPrompt` applies to the API string, so the preview matches).
@@ -269,7 +265,7 @@ user closes modal
 - 0 styles → `[prompt]`.
 - 1 style, non-empty prefix + non-empty suffix → `[prefix, prompt, suffix]` with matching `colorIndex`.
 - 1 style with empty prefix (whitespace only) → `[prompt, suffix]`.
-- 3 styles → correct order: `pfx[2], pfx[1], pfx[0], prompt, sfx[0], sfx[1], sfx[2]` (prefixes outermost-first, suffixes innermost-first); each style's prefix and suffix share the same `colorIndex`.
+- 3 styles → correct order: `pfx[0], pfx[1], pfx[2], prompt, sfx[2], sfx[1], sfx[0]`; each style's prefix and suffix share the same `colorIndex`.
 - Empty prompt → `prompt` block text is `""` (caller handles placeholder).
 - Style with both prefix and suffix empty → style contributes no tiles.
 

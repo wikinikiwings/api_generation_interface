@@ -24,8 +24,7 @@ export function buildPreviewBlocks(
 ): PreviewBlock[] {
   const blocks: PreviewBlock[] = [];
 
-  for (let i = activeStyles.length - 1; i >= 0; i--) {
-    const s = activeStyles[i];
+  activeStyles.forEach((s, i) => {
     const trimmed = softTrim(s.prefix ?? "");
     if (/\S/.test(trimmed)) {
       blocks.push({
@@ -36,11 +35,12 @@ export function buildPreviewBlocks(
         text: trimmed,
       });
     }
-  }
+  });
 
   blocks.push({ kind: "prompt", text: prompt });
 
-  activeStyles.forEach((s, i) => {
+  for (let i = activeStyles.length - 1; i >= 0; i--) {
+    const s = activeStyles[i];
     const trimmed = softTrim(s.suffix ?? "");
     if (/\S/.test(trimmed)) {
       blocks.push({
@@ -51,7 +51,7 @@ export function buildPreviewBlocks(
         text: trimmed,
       });
     }
-  });
+  }
 
   return blocks;
 }
