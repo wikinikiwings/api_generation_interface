@@ -107,4 +107,57 @@ describe("buildPreviewBlocks", () => {
     const seventhPrefix = blocks.find((b) => b.kind === "prefix" && b.styleId === "s6");
     expect(seventhPrefix?.colorIndex).toBe(0);
   });
+
+  it("attach-suffix block lands after wrap suffixes", () => {
+    const wrap = style({ id: "w", name: "W", prefix: "PW", suffix: "SW" });
+    const neg = style({ id: "n", name: "N", prefix: "", suffix: "NEG" });
+    const blocks = buildPreviewBlocks("x", [wrap, neg]);
+    expect(blocks.map((b) => [b.kind, b.styleId ?? "_", b.text])).toEqual([
+      ["prefix", "w", "PW"],
+      ["prompt", "_", "x"],
+      ["suffix", "w", "SW"],
+      ["suffix", "n", "NEG"],
+    ]);
+  });
+
+  it("attach-prefix block precedes wrap prefixes", () => {
+    const wrap = style({ id: "w", name: "W", prefix: "PW", suffix: "SW" });
+    const pre = style({ id: "p", name: "P", prefix: "PRE", suffix: "" });
+    const blocks = buildPreviewBlocks("x", [wrap, pre]);
+    expect(blocks.map((b) => [b.kind, b.styleId ?? "_", b.text])).toEqual([
+      ["prefix", "p", "PRE"],
+      ["prefix", "w", "PW"],
+      ["prompt", "_", "x"],
+      ["suffix", "w", "SW"],
+    ]);
+  });
+
+  it("mixed zones — full layout matches composeFinalPrompt ordering", () => {
+    const pre = style({ id: "p", name: "P", prefix: "HEADER:", suffix: "" });
+    const w1 = style({ id: "w1", name: "W1", prefix: "P1", suffix: "S1" });
+    const w2 = style({ id: "w2", name: "W2", prefix: "P2", suffix: "S2" });
+    const neg = style({ id: "n", name: "N", prefix: "", suffix: "NEG" });
+    const blocks = buildPreviewBlocks("x", [pre, w1, w2, neg]);
+    expect(blocks.map((b) => [b.kind, b.styleId ?? "_", b.text])).toEqual([
+      ["prefix", "p", "HEADER:"],
+      ["prefix", "w1", "P1"],
+      ["prefix", "w2", "P2"],
+      ["prompt", "_", "x"],
+      ["suffix", "w2", "S2"],
+      ["suffix", "w1", "S1"],
+      ["suffix", "n", "NEG"],
+    ]);
+  });
+
+  it("colorIndex on an attach-suffix block equals the style's position in activeStyles, not its rendered index", () => {
+    // Style at activeStyles[0] is attach-suffix; it renders last but
+    // must keep colorIndex 0.
+    const neg = style({ id: "n", name: "N", prefix: "", suffix: "NEG" });
+    const wrap = style({ id: "w", name: "W", prefix: "PW", suffix: "SW" });
+    const blocks = buildPreviewBlocks("x", [neg, wrap]);
+    const negBlock = blocks.find((b) => b.styleId === "n");
+    const wrapPrefix = blocks.find((b) => b.kind === "prefix" && b.styleId === "w");
+    expect(negBlock?.colorIndex).toBe(0);
+    expect(wrapPrefix?.colorIndex).toBe(1);
+  });
 });
