@@ -61,8 +61,6 @@ function SortableStyleRow({
     <div
       ref={setNodeRef}
       style={dragStyle}
-      role="menuitemcheckbox"
-      aria-checked
       className={cn(
         "flex items-center gap-1 rounded-md bg-primary/5 transition-colors",
         isDragging && "z-10 opacity-50"
@@ -73,14 +71,15 @@ function SortableStyleRow({
         {...attributes}
         {...listeners}
         title="Потяни чтобы изменить порядок"
-        aria-label={`Позиция ${order}. Потяни чтобы изменить порядок`}
-        className="flex h-5 w-5 shrink-0 cursor-grab items-center justify-center rounded border border-primary bg-primary text-[11px] font-semibold text-primary-foreground active:cursor-grabbing"
+        aria-label={`${style.name}, позиция ${order}. Потяни чтобы изменить порядок`}
+        className="flex h-6 w-6 shrink-0 cursor-grab items-center justify-center rounded border border-primary bg-primary text-[11px] font-semibold text-primary-foreground active:cursor-grabbing"
       >
         {order}
       </button>
       <button
         type="button"
         onClick={onToggle}
+        aria-pressed={true}
         className="flex min-w-0 flex-1 items-center rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
       >
         <span className="truncate">{style.name}</span>
@@ -98,7 +97,7 @@ function PlainStyleRow({ style, onToggle }: StyleRowProps) {
       aria-checked={false}
       className="flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
     >
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-muted-foreground/40 text-[10px]" />
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-muted-foreground/40 text-[10px]" />
       <span className="truncate">{style.name}</span>
     </button>
   );
