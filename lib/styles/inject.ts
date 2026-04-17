@@ -19,24 +19,27 @@ export function softTrim(s: string): string {
  *
  * Matryoshka layout for activeStyles = [s1, s2, s3]:
  *
- *   p1
- *                  <— blank line between stacked styles
+ *   p3             <— outermost (last clicked)
+ *
  *   p2
  *
- *   p3
+ *   p1             <— innermost (first clicked, closest to user prompt)
  *   userPrompt     <— single newline around user prompt
- *   s3
+ *   s1             <— innermost (first clicked, closest to user prompt)
  *
  *   s2
  *
- *   s1
+ *   s3             <— outermost (last clicked)
  *
- * s1 is the outermost style (prefix first, suffix last); the last style
- * is innermost. Interior newlines inside a single part are preserved,
- * and admin-authored leading/trailing newlines bleed through too — they
- * add extra blank lines at the boundary with userPrompt or the next
- * stacked style, which is exactly the control knob Shift+Enter exposes
- * in the admin textarea.
+ * activeStyles[0] is the innermost style (its prefix renders immediately
+ * before userPrompt; its suffix immediately after). activeStyles[N-1]
+ * is the outermost style. Click order on the form determines this:
+ * first click = directly wraps the prompt, subsequent clicks add outer
+ * layers. Interior newlines inside a single part are preserved, and
+ * admin-authored leading/trailing newlines bleed through — they add
+ * extra blank lines at the boundary with userPrompt or the next stacked
+ * style, which is exactly the control knob Shift+Enter exposes in the
+ * admin textarea.
  */
 export function composeFinalPrompt(
   userPrompt: string,
@@ -44,12 +47,12 @@ export function composeFinalPrompt(
 ): string {
   if (activeStyles.length === 0) return userPrompt;
 
-  const prefixes = activeStyles
+  const prefixes = [...activeStyles]
+    .reverse()
     .map((s) => softTrim(s.prefix ?? ""))
     .filter((p) => /\S/.test(p));
 
-  const suffixes = [...activeStyles]
-    .reverse()
+  const suffixes = activeStyles
     .map((s) => softTrim(s.suffix ?? ""))
     .filter((s) => /\S/.test(s));
 

@@ -85,13 +85,13 @@ describe("composeFinalPrompt", () => {
   });
 
   it("stacked styles with trailing newlines stack their blank lines", () => {
-    // First style ends with \n; the \n\n join between stacked prefixes
-    // plus the trailing \n produces three consecutive \n (two blank
-    // lines). Admin-controlled extra vertical room.
+    // b is clicked second → outermost, a is clicked first → innermost
+    // (closest to userPrompt). a's trailing \n + the \n\n join adds an
+    // extra blank line between a's prefix and userPrompt.
     const a = style({ id: "a", prefix: "[block A:\n", suffix: "" });
     const b = style({ id: "b", prefix: "[block B:", suffix: "" });
     expect(composeFinalPrompt("a cat", [a, b])).toBe(
-      "[block A:\n\n\n[block B:\na cat"
+      "[block B:\n\n[block A:\n\na cat"
     );
   });
 
@@ -108,26 +108,30 @@ describe("composeFinalPrompt", () => {
     const kino = style({ id: "k", prefix: "cinematic", suffix: "35mm" });
     const threeD = style({ id: "3d", prefix: "3d render", suffix: "ray traced" });
     const groza = style({ id: "g", prefix: "storm", suffix: "lightning" });
-    // prefixes joined with \n\n: "cinematic\n\n3d render\n\nstorm"
-    // suffixes (reversed) joined with \n\n: "lightning\n\nray traced\n\n35mm"
+    // kino is clicked 1st → innermost; threeD 2nd → middle; groza 3rd → outer.
+    // prefixes (reversed) joined with \n\n: "storm\n\n3d render\n\ncinematic"
+    // suffixes joined with \n\n: "35mm\n\nray traced\n\nlightning"
     // glue: prefix-block \n userPrompt \n suffix-block
     expect(
       composeFinalPrompt("a cat", [kino, threeD, groza])
     ).toBe(
-      "cinematic\n\n3d render\n\nstorm\na cat\nlightning\n\nray traced\n\n35mm"
+      "storm\n\n3d render\n\ncinematic\na cat\n35mm\n\nray traced\n\nlightning"
     );
   });
 
   it("three styles — some parts empty, still filters correctly", () => {
     // kino has both; threeD has only prefix; groza has only suffix.
+    // kino is innermost (first clicked), groza outermost (third).
     const kino = style({ id: "k", prefix: "cinematic", suffix: "35mm" });
     const threeD = style({ id: "3d", prefix: "3d render", suffix: "" });
     const groza = style({ id: "g", prefix: "", suffix: "lightning" });
-    // prefixes after filter joined: "cinematic\n\n3d render"
-    // suffixes reversed+filter joined: "lightning\n\n35mm"
+    // prefixes (reversed, then filter) joined: "3d render\n\ncinematic"
+    //   (groza's blank prefix drops)
+    // suffixes (not reversed, then filter) joined: "35mm\n\nlightning"
+    //   (threeD's blank suffix drops)
     expect(
       composeFinalPrompt("a cat", [kino, threeD, groza])
-    ).toBe("cinematic\n\n3d render\na cat\nlightning\n\n35mm");
+    ).toBe("3d render\n\ncinematic\na cat\n35mm\n\nlightning");
   });
 
   it("three styles — all prefixes and suffixes empty: passthrough", () => {
