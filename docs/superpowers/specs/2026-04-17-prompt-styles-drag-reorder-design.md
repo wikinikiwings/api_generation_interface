@@ -168,34 +168,59 @@ The left-column JSX becomes:
     </div>
   ) : (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <SortableContext items={selectedStyleIds} strategy={verticalListSortingStrategy}>
-        {styles.map((s) => {
-          const idx = selectedStyleIds.indexOf(s.id);
-          const checked = idx !== -1;
-          if (checked) {
-            return (
-              <SortableStyleRow
-                key={s.id}
-                style={s}
-                order={idx + 1}
-                onToggle={() => toggle(s.id)}
-              />
-            );
-          }
-          return (
-            <PlainStyleRow
-              key={s.id}
-              style={s}
-              onToggle={() => toggle(s.id)}
-            />
-          );
-        })}
+      <SortableContext
+        items={tickedStyles.map((s) => s.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        {tickedStyles.map((s, i) => (
+          <SortableStyleRow
+            key={s.id}
+            style={s}
+            order={i + 1}
+            onToggle={() => toggle(s.id)}
+          />
+        ))}
       </SortableContext>
+      {untickedStyles.map((s) => (
+        <PlainStyleRow
+          key={s.id}
+          style={s}
+          onToggle={() => toggle(s.id)}
+        />
+      ))}
     </DndContext>
   )}
   {/* >3 warning stays as-is */}
 </div>
 ```
+
+`tickedStyles` and `untickedStyles` are computed via `useMemo`:
+
+```tsx
+const tickedStyles = React.useMemo<Style[]>(
+  () =>
+    selectedStyleIds
+      .map((id) => styles.find((s) => s.id === id))
+      .filter((s): s is Style => s !== undefined),
+  [styles, selectedStyleIds]
+);
+const untickedStyles = React.useMemo<Style[]>(
+  () => styles.filter((s) => !selectedStyleIds.includes(s.id)),
+  [styles, selectedStyleIds]
+);
+```
+
+Rendering ticked styles **at the top in `selectedStyleIds` order** (not
+admin order) is required by `@dnd-kit`'s `verticalListSortingStrategy`
+— DOM order of sortables must match `items` so transforms during drag
+compute correctly. It also happens to be a UX improvement: the user's
+matryoshka stack is always visible at the top in its actual wrap
+order, available styles below.
+
+`tickedStyles` already equals the existing `activeStyles` derivation
+above — the dialog currently computes `activeStyles` from
+`selectedStyleIds` the same way. Use a single `activeStyles` and
+reference it both places to avoid duplication.
 
 `SortableStyleRow` and `PlainStyleRow` are small local components
 defined in the same file (they are tiny — splitting them into new
