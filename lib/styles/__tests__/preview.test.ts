@@ -18,22 +18,22 @@ describe("buildPreviewBlocks", () => {
   it("zero styles returns a single prompt block with the raw prompt text", () => {
     const blocks = buildPreviewBlocks("a cat", []);
     expect(blocks).toEqual<PreviewBlock[]>([
-      { kind: "prompt", text: "a cat" },
+      { kind: "prompt", text: "a cat", depth: 1 },
     ]);
   });
 
   it("zero styles with empty prompt returns one prompt block with empty text", () => {
     const blocks = buildPreviewBlocks("", []);
-    expect(blocks).toEqual<PreviewBlock[]>([{ kind: "prompt", text: "" }]);
+    expect(blocks).toEqual<PreviewBlock[]>([{ kind: "prompt", text: "", depth: 1 }]);
   });
 
   it("single style with prefix and suffix returns [prefix, prompt, suffix] with matching colorIndex", () => {
     const s = style({ id: "k", name: "Kino", prefix: "cinematic", suffix: "35mm" });
     const blocks = buildPreviewBlocks("a cat", [s]);
     expect(blocks).toEqual<PreviewBlock[]>([
-      { kind: "prefix", styleId: "k", styleName: "Kino", colorIndex: 0, text: "cinematic" },
-      { kind: "prompt", text: "a cat" },
-      { kind: "suffix", styleId: "k", styleName: "Kino", colorIndex: 0, text: "35mm" },
+      { kind: "prefix", styleId: "k", styleName: "Kino", colorIndex: 0, text: "cinematic", depth: 1 },
+      { kind: "prompt", text: "a cat", depth: 2 },
+      { kind: "suffix", styleId: "k", styleName: "Kino", colorIndex: 0, text: "35mm", depth: 1 },
     ]);
   });
 
@@ -41,8 +41,8 @@ describe("buildPreviewBlocks", () => {
     const s = style({ id: "k", name: "Kino", prefix: "  \n \t ", suffix: "35mm" });
     const blocks = buildPreviewBlocks("a cat", [s]);
     expect(blocks).toEqual<PreviewBlock[]>([
-      { kind: "prompt", text: "a cat" },
-      { kind: "suffix", styleId: "k", styleName: "Kino", colorIndex: 0, text: "35mm" },
+      { kind: "prompt", text: "a cat", depth: 1 },
+      { kind: "suffix", styleId: "k", styleName: "Kino", colorIndex: 0, text: "35mm", depth: 0 },
     ]);
   });
 
@@ -51,9 +51,9 @@ describe("buildPreviewBlocks", () => {
     const real = style({ id: "k", name: "Kino", prefix: "cinematic", suffix: "35mm" });
     const blocks = buildPreviewBlocks("a cat", [empty, real]);
     expect(blocks).toEqual<PreviewBlock[]>([
-      { kind: "prefix", styleId: "k", styleName: "Kino", colorIndex: 1, text: "cinematic" },
-      { kind: "prompt", text: "a cat" },
-      { kind: "suffix", styleId: "k", styleName: "Kino", colorIndex: 1, text: "35mm" },
+      { kind: "prefix", styleId: "k", styleName: "Kino", colorIndex: 1, text: "cinematic", depth: 1 },
+      { kind: "prompt", text: "a cat", depth: 2 },
+      { kind: "suffix", styleId: "k", styleName: "Kino", colorIndex: 1, text: "35mm", depth: 1 },
     ]);
   });
 
@@ -159,5 +159,63 @@ describe("buildPreviewBlocks", () => {
     const wrapPrefix = blocks.find((b) => b.kind === "prefix" && b.styleId === "w");
     expect(negBlock?.colorIndex).toBe(0);
     expect(wrapPrefix?.colorIndex).toBe(1);
+  });
+
+  it("zero styles: prompt block has depth 1 even with no matryoshka", () => {
+    const blocks = buildPreviewBlocks("a cat", []);
+    expect(blocks).toEqual<PreviewBlock[]>([
+      { kind: "prompt", text: "a cat", depth: 1 },
+    ]);
+  });
+
+  it("one wrap style: prefix depth 1, prompt depth 2, suffix depth 1", () => {
+    const w = style({ id: "w", name: "W", prefix: "P", suffix: "S" });
+    const blocks = buildPreviewBlocks("x", [w]);
+    expect(blocks.map((b) => [b.kind, b.depth])).toEqual([
+      ["prefix", 1],
+      ["prompt", 2],
+      ["suffix", 1],
+    ]);
+  });
+
+  it("three wrap styles: diamond depths 1,2,3, prompt 4, then 3,2,1", () => {
+    const a = style({ id: "a", name: "A", prefix: "PA", suffix: "SA" });
+    const b = style({ id: "b", name: "B", prefix: "PB", suffix: "SB" });
+    const c = style({ id: "c", name: "C", prefix: "PC", suffix: "SC" });
+    const blocks = buildPreviewBlocks("x", [a, b, c]);
+    expect(blocks.map((b) => [b.kind, b.styleId ?? "_", b.depth])).toEqual([
+      ["prefix", "a", 1],
+      ["prefix", "b", 2],
+      ["prefix", "c", 3],
+      ["prompt", "_", 4],
+      ["suffix", "c", 3],
+      ["suffix", "b", 2],
+      ["suffix", "a", 1],
+    ]);
+  });
+
+  it("attach blocks are always depth 0; wrap depths unaffected by attach", () => {
+    const pre = style({ id: "p", name: "P", prefix: "PRE", suffix: "" });
+    const w = style({ id: "w", name: "W", prefix: "PW", suffix: "SW" });
+    const neg = style({ id: "n", name: "N", prefix: "", suffix: "NEG" });
+    const blocks = buildPreviewBlocks("x", [pre, w, neg]);
+    expect(blocks.map((b) => [b.kind, b.styleId ?? "_", b.depth])).toEqual([
+      ["prefix", "p", 0],
+      ["prefix", "w", 1],
+      ["prompt", "_", 2],
+      ["suffix", "w", 1],
+      ["suffix", "n", 0],
+    ]);
+  });
+
+  it("only attach styles: wrap absent → attach at 0, prompt at 1", () => {
+    const pre = style({ id: "p", name: "P", prefix: "PRE", suffix: "" });
+    const neg = style({ id: "n", name: "N", prefix: "", suffix: "NEG" });
+    const blocks = buildPreviewBlocks("x", [pre, neg]);
+    expect(blocks.map((b) => [b.kind, b.styleId ?? "_", b.depth])).toEqual([
+      ["prefix", "p", 0],
+      ["prompt", "_", 1],
+      ["suffix", "n", 0],
+    ]);
   });
 });

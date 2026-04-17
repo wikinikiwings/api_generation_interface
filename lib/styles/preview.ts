@@ -7,6 +7,7 @@ export interface PreviewBlock {
   styleId?: string;
   styleName?: string;
   colorIndex?: number;
+  depth: number;
   text: string;
 }
 
@@ -26,22 +27,29 @@ export function buildPreviewBlocks(
   const { attachPrefix, wrap, attachSuffix } = partitionStyles(activeStyles);
   const indexOf = new Map(activeStyles.map((s, i) => [s.id, i]));
   const blocks: PreviewBlock[] = [];
+  const promptDepth = wrap.length + 1;
 
-  const push = (kind: "prefix" | "suffix", s: Style, raw: string) => {
+  const push = (
+    kind: "prefix" | "suffix",
+    s: Style,
+    depth: number,
+    raw: string
+  ) => {
     blocks.push({
       kind,
       styleId: s.id,
       styleName: s.name,
       colorIndex: (indexOf.get(s.id) ?? 0) % STYLE_COLORS.length,
+      depth,
       text: softTrim(raw),
     });
   };
 
-  for (const s of attachPrefix) push("prefix", s, s.prefix);
-  for (const s of wrap) push("prefix", s, s.prefix);
-  blocks.push({ kind: "prompt", text: prompt });
-  for (let i = wrap.length - 1; i >= 0; i--) push("suffix", wrap[i], wrap[i].suffix);
-  for (const s of attachSuffix) push("suffix", s, s.suffix);
+  for (const s of attachPrefix) push("prefix", s, 0, s.prefix);
+  for (let i = 0; i < wrap.length; i++) push("prefix", wrap[i], i + 1, wrap[i].prefix);
+  blocks.push({ kind: "prompt", depth: promptDepth, text: prompt });
+  for (let i = wrap.length - 1; i >= 0; i--) push("suffix", wrap[i], i + 1, wrap[i].suffix);
+  for (const s of attachSuffix) push("suffix", s, 0, s.suffix);
 
   return blocks;
 }
