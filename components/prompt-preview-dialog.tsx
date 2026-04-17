@@ -51,8 +51,9 @@ export function mergeZoneReorder(
 function SortableStyleRow({
   style,
   order,
+  colorIndex,
   onToggle,
-}: StyleRowProps & { order: number }) {
+}: StyleRowProps & { order: number; colorIndex: number }) {
   const {
     setNodeRef,
     attributes,
@@ -80,11 +81,23 @@ function SortableStyleRow({
       aria-label={`Снять стиль ${style.name}, позиция ${order}. Потяни чтобы изменить порядок`}
       title="Клик — снять стиль. Потяни — изменить порядок."
       className={cn(
-        "flex items-center gap-1 rounded-md bg-primary/5 text-left transition-colors cursor-grab hover:bg-accent hover:text-accent-foreground active:cursor-grabbing",
+        "relative flex items-center gap-1 rounded-md bg-primary/5 text-left transition-colors cursor-grab hover:bg-accent hover:text-accent-foreground active:cursor-grabbing",
         isDragging && "z-10 opacity-50"
       )}
     >
-      <span className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded border border-primary bg-primary text-[11px] font-semibold text-primary-foreground">
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-y-0 left-0 w-1 rounded-l-md",
+          STYLE_COLORS[colorIndex]
+        )}
+      />
+      <span
+        className={cn(
+          "ml-2 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[11px] font-semibold text-white",
+          STYLE_COLORS[colorIndex]
+        )}
+      >
         {order}
       </span>
       <span className="min-w-0 flex-1 truncate px-2 py-1.5 text-sm">
@@ -135,6 +148,14 @@ export function PromptPreviewDialog({
 
   const partitioned = React.useMemo(
     () => partitionStyles(activeStyles),
+    [activeStyles]
+  );
+
+  const colorIndexById = React.useMemo(
+    () =>
+      new Map(
+        activeStyles.map((s, i) => [s.id, i % STYLE_COLORS.length])
+      ),
     [activeStyles]
   );
 
@@ -235,6 +256,7 @@ export function PromptPreviewDialog({
                                 key={s.id}
                                 style={s}
                                 order={i + 1}
+                                colorIndex={colorIndexById.get(s.id) ?? 0}
                                 onToggle={() => toggle(s.id)}
                               />
                             ))}
