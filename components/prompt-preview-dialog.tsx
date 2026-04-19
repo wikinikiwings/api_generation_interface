@@ -310,11 +310,6 @@ export function PromptPreviewDialog({
                 )}
               </>
             )}
-            {selectedStyleIds.length > 3 && (
-              <div className="mt-1 px-2 text-[11px] text-muted-foreground">
-                ⚠ Больше 3 стилей — может выйти невнятный промпт
-              </div>
-            )}
           </div>
 
           {/* Right: structured preview */}

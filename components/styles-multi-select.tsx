@@ -28,8 +28,6 @@ interface StylesMultiSelectProps {
  * an Info button that opens a modal showing the raw prefix/suffix
  * content (so the style is not a "black box"), and a Copy button
  * that places prefix + blank line + suffix on the clipboard.
- *
- * Soft warning appears below the trigger when selectedIds.length > 3.
  */
 export function StylesMultiSelect({
   styles,
@@ -180,12 +178,6 @@ export function StylesMultiSelect({
               );
             })
           )}
-        </div>
-      )}
-
-      {selectedIds.length > 3 && (
-        <div className="mt-1 text-[11px] text-muted-foreground">
-          ⚠ Больше 3 стилей — может выйти невнятный промпт
         </div>
       )}
 
