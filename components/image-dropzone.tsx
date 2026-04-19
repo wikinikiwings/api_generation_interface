@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Upload, X } from "lucide-react";
+import { Plus, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn, fileToDataURL } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -360,6 +360,18 @@ export function ImageDropzone({
                 </Button>
               </div>
             ))}
+            {remaining > 0 && (
+              <div
+                className={cn(
+                  "flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border/70 bg-background/50 text-xs text-muted-foreground transition-colors",
+                  "hover:border-primary/50 hover:bg-muted/60"
+                )}
+                aria-label="Добавить изображение"
+              >
+                <Plus className="h-5 w-5" />
+                <span>Добавить</span>
+              </div>
+            )}
           </div>
           <div className="text-xs text-muted-foreground">
             {remaining === 0
