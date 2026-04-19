@@ -155,3 +155,46 @@ Manual verification checklist (no automated tests):
 8. Click `×` on a tile → tile removes; add-tile reappears if was at limit.
 9. At limit (14): add-tile hidden; footer shows "Лимит 14 изображений достигнут"; outer box greyed via `pointer-events-none opacity-50`.
 10. Drag OS file into filled box → outer box highlights `border-primary bg-primary/5`; drop ingests remaining room.
+
+---
+
+## Follow-up: Unified Layout (same day, 2026-04-19)
+
+After the inline-thumbnails change landed, the user noticed the empty state was still visibly taller than the filled state, causing a size jump when the first image was added. We simplified further: the empty state's distinct "big hint" layout (Upload icon, hint paragraph) was removed entirely. **Both states now share the same shell.**
+
+### What changed vs. the design above
+
+- **Empty state has no special JSX.** The `{!hasImages && (...)}` branch is gone. The dashed container always renders the grid + footer, regardless of `value.length`.
+- **With zero images, the grid contains only the `+` add-tile** (first cell). This gives the empty widget the same height as a 1-image widget: 1 tile row + footer + `p-3` padding.
+- **Outer container padding is now always `p-3`** (no longer conditional). The `group flex flex-col items-center justify-center gap-2 p-6 text-center` empty-only class string is removed.
+- **`Upload` icon and the "Перетащи картинки сюда или кликни" hint are gone.** Visual affordance comes from the dashed border + the `+` add-tile. The lucide-react `Upload` import is dropped.
+- **`hasImages` constant is removed** — no longer needed without the branch.
+- **Footer text tightened:** `"PNG, JPEG, WebP · выбрано ${n}/${max}"` → `"PNG, JPEG, WebP · ${n}/${max}"`. The `выбрано` word read awkwardly for `0/14`, and removing it lets the same string work for all counts. The `remaining === 0` branch still reads `"Лимит ${max} изображений достигнут"`.
+
+### Rationale
+
+- **Zero size jumps.** Empty and 1-image states are structurally identical (grid with N cells + footer), so height is determined by the same formula. No more visual hop when the first image arrives.
+- **Simpler code.** One JSX tree instead of two branches; no `hasImages` branching; fewer imports.
+- **Discoverability trade-off.** The explicit "Перетащи картинки сюда или кликни" hint is lost. The dashed container + `+` add-tile + `cursor-pointer` are judged sufficient affordance for this app's audience (power users who already know drag/paste/click patterns). User explicitly accepted this trade-off.
+
+### Final DOM structure (post-follow-up)
+
+```
+<div
+  className="dashed-container space-y-3 p-3 …"  // no state branching
+  onDragOver onDragLeave onDrop onClick
+>
+  <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+    {value.map(img => <ImageTile … />)}
+    {remaining > 0 && <AddTile />}          // rendered even when value is empty
+  </div>
+  <div className="text-xs text-muted-foreground">
+    {remaining === 0
+      ? `Лимит ${maxImages} изображений достигнут`
+      : `PNG, JPEG, WebP · ${value.length}/${maxImages}`}
+  </div>
+  <input type="file" hidden … />
+</div>
+```
+
+Commit: `903d169` — `refactor(image-dropzone): unify empty and filled layouts`.
