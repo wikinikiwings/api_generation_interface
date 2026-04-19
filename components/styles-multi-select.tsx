@@ -38,7 +38,23 @@ export function StylesMultiSelect({
 }: StylesMultiSelectProps) {
   const [open, setOpen] = React.useState(false);
   const [infoStyle, setInfoStyle] = React.useState<Style | null>(null);
+  const [query, setQuery] = React.useState("");
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const searchInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  React.useEffect(() => {
+    if (open) {
+      const t = window.setTimeout(() => searchInputRef.current?.focus(), 0);
+      return () => window.clearTimeout(t);
+    }
+    setQuery("");
+  }, [open]);
+
+  const filteredStyles = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length === 0) return styles;
+    return styles.filter((s) => s.name.toLowerCase().includes(q));
+  }, [styles, query]);
 
   // Close on click outside. Ignore clicks when the info dialog is open —
   // the dialog renders in a portal outside containerRef, and without this
@@ -110,16 +126,29 @@ export function StylesMultiSelect({
       </button>
 
       {open && (
-        <div
-          role="listbox"
-          className="absolute left-0 right-0 z-20 mt-1 max-h-64 overflow-auto rounded-md border border-border bg-background p-1 shadow-md"
-        >
+        <div className="absolute left-0 right-0 z-20 mt-1 rounded-md border border-border bg-background p-1 shadow-md">
+          {styles.length > 0 && (
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Поиск стилей…"
+              aria-label="Поиск стилей"
+              className="mb-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          )}
+          <div role="listbox" className="max-h-64 overflow-auto">
           {styles.length === 0 ? (
             <div className="px-2 py-1.5 text-xs text-muted-foreground">
               Стилей пока нет. Создайте в админке.
             </div>
+          ) : filteredStyles.length === 0 ? (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              Ничего не найдено
+            </div>
           ) : (
-            styles.map((s) => {
+            filteredStyles.map((s) => {
               const idx = selectedIds.indexOf(s.id);
               const checked = idx !== -1;
               const order = checked ? idx + 1 : null;
@@ -178,6 +207,7 @@ export function StylesMultiSelect({
               );
             })
           )}
+          </div>
         </div>
       )}
 
