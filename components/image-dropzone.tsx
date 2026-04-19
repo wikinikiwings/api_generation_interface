@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, Upload, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn, fileToDataURL } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -248,8 +248,6 @@ export function ImageDropzone({
     );
   }
 
-  const hasImages = value.length > 0;
-
   return (
     <div
       onDragOver={(e) => {
@@ -264,122 +262,101 @@ export function ImageDropzone({
       onDrop={onDrop}
       onClick={() => inputRef.current?.click()}
       className={cn(
-        "relative cursor-pointer rounded-lg border-2 border-dashed border-border bg-muted/30 transition-colors",
+        "relative cursor-pointer space-y-3 rounded-lg border-2 border-dashed border-border bg-muted/30 p-3 transition-colors",
         "hover:border-primary/50 hover:bg-muted/50",
         isDragging && "border-primary bg-primary/5",
-        remaining === 0 && "pointer-events-none opacity-50",
-        hasImages
-          ? "space-y-3 p-3"
-          : "group flex flex-col items-center justify-center gap-2 p-6 text-center"
+        remaining === 0 && "pointer-events-none opacity-50"
       )}
     >
-      {!hasImages && (
-        <>
-          <Upload className="h-6 w-6 text-muted-foreground transition-transform group-hover:scale-110" />
-          <div className="text-sm font-medium">
-            {remaining === 0
-              ? `Лимит ${maxImages} изображений достигнут`
-              : "Перетащи картинки сюда или кликни"}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            PNG, JPEG, WebP · до {maxImages} изображений
-          </div>
-        </>
-      )}
-
-      {hasImages && (
-        <>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-            {value.map((img, idx) => (
-              <div
-                key={img.id}
-                draggable
-                onDragStart={(e) => {
-                  setDraggedId(img.id);
-                  e.dataTransfer.effectAllowed = "move";
-                  // Some browsers require data to be set for drag to start.
-                  e.dataTransfer.setData("text/plain", img.id);
-                }}
-                onDragEnd={() => {
-                  setDraggedId(null);
-                  setDragOverId(null);
-                }}
-                onDragOver={(e) => {
-                  // Only react to internal tile drags, not file-from-OS drags.
-                  if (!draggedId) return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  e.dataTransfer.dropEffect = "move";
-                  if (dragOverId !== img.id) setDragOverId(img.id);
-                }}
-                onDragLeave={(e) => {
-                  if (!draggedId) return;
-                  e.stopPropagation();
-                  if (dragOverId === img.id) setDragOverId(null);
-                }}
-                onDrop={(e) => {
-                  if (!draggedId) return;
-                  e.preventDefault();
-                  // Block bubbling so the outer file-drop zone doesn't try to
-                  // ingest this as a new upload.
-                  e.stopPropagation();
-                  reorder(draggedId, img.id);
-                  setDraggedId(null);
-                  setDragOverId(null);
-                }}
-                className={cn(
-                  "group relative aspect-square cursor-grab overflow-hidden rounded-md border border-border bg-background p-1 transition-all active:cursor-grabbing",
-                  draggedId === img.id && "opacity-40",
-                  dragOverId === img.id &&
-                    draggedId !== img.id &&
-                    "ring-2 ring-primary ring-offset-1 ring-offset-background"
-                )}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={img.dataUrl}
-                  alt={img.file.name}
-                  draggable={false}
-                  className="h-full w-full select-none object-contain"
-                />
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5">
-                  <span className="text-[10px] text-white">#{idx + 1}</span>
-                </div>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="icon"
-                  className="absolute right-1 top-1 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleRemove(img.id);
-                  }}
-                  aria-label="Remove image"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
-            {remaining > 0 && (
-              <div
-                className={cn(
-                  "flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border/70 bg-background/50 text-xs text-muted-foreground transition-colors",
-                  "hover:border-primary/50 hover:bg-muted/60"
-                )}
-                aria-label="Добавить изображение"
-              >
-                <Plus className="h-5 w-5" />
-                <span>Добавить</span>
-              </div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+        {value.map((img, idx) => (
+          <div
+            key={img.id}
+            draggable
+            onDragStart={(e) => {
+              setDraggedId(img.id);
+              e.dataTransfer.effectAllowed = "move";
+              // Some browsers require data to be set for drag to start.
+              e.dataTransfer.setData("text/plain", img.id);
+            }}
+            onDragEnd={() => {
+              setDraggedId(null);
+              setDragOverId(null);
+            }}
+            onDragOver={(e) => {
+              // Only react to internal tile drags, not file-from-OS drags.
+              if (!draggedId) return;
+              e.preventDefault();
+              e.stopPropagation();
+              e.dataTransfer.dropEffect = "move";
+              if (dragOverId !== img.id) setDragOverId(img.id);
+            }}
+            onDragLeave={(e) => {
+              if (!draggedId) return;
+              e.stopPropagation();
+              if (dragOverId === img.id) setDragOverId(null);
+            }}
+            onDrop={(e) => {
+              if (!draggedId) return;
+              e.preventDefault();
+              // Block bubbling so the outer file-drop zone doesn't try to
+              // ingest this as a new upload.
+              e.stopPropagation();
+              reorder(draggedId, img.id);
+              setDraggedId(null);
+              setDragOverId(null);
+            }}
+            className={cn(
+              "group relative aspect-square cursor-grab overflow-hidden rounded-md border border-border bg-background p-1 transition-all active:cursor-grabbing",
+              draggedId === img.id && "opacity-40",
+              dragOverId === img.id &&
+                draggedId !== img.id &&
+                "ring-2 ring-primary ring-offset-1 ring-offset-background"
             )}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={img.dataUrl}
+              alt={img.file.name}
+              draggable={false}
+              className="h-full w-full select-none object-contain"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5">
+              <span className="text-[10px] text-white">#{idx + 1}</span>
+            </div>
+            <Button
+              type="button"
+              variant="destructive"
+              size="icon"
+              className="absolute right-1 top-1 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemove(img.id);
+              }}
+              aria-label="Remove image"
+            >
+              <X className="h-3 w-3" />
+            </Button>
           </div>
-          <div className="text-xs text-muted-foreground">
-            {remaining === 0
-              ? `Лимит ${maxImages} изображений достигнут`
-              : `PNG, JPEG, WebP · выбрано ${value.length}/${maxImages}`}
+        ))}
+        {remaining > 0 && (
+          <div
+            className={cn(
+              "flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed border-border/70 bg-background/50 text-xs text-muted-foreground transition-colors",
+              "hover:border-primary/50 hover:bg-muted/60"
+            )}
+            aria-label="Добавить изображение"
+          >
+            <Plus className="h-5 w-5" />
+            <span>Добавить</span>
           </div>
-        </>
-      )}
+        )}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {remaining === 0
+          ? `Лимит ${maxImages} изображений достигнут`
+          : `PNG, JPEG, WebP · ${value.length}/${maxImages}`}
+      </div>
 
       <input
         ref={inputRef}
