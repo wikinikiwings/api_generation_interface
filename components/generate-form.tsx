@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Sparkles, Loader2, Eye } from "lucide-react";
+import { Sparkles, Loader2, Eye, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -585,18 +585,32 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Label htmlFor="style">Стиль</Label>
-          <button
-            type="button"
-            onClick={() => setPreviewOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={previewOpen}
-            aria-label="Открыть превью итогового промпта"
-            title="Превью итогового промпта"
-            className="flex items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Eye className="h-3.5 w-3.5" />
-            Превью
-          </button>
+          <div className="flex items-center gap-1">
+            {selectedStyleIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedStyleIds([])}
+                aria-label="Сбросить на стандартный стиль"
+                title="Сбросить на стандартный стиль"
+                className="flex items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors duration-300 animate-in fade-in hover:text-foreground"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Сбросить
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={previewOpen}
+              aria-label="Открыть превью итогового промпта"
+              title="Превью итогового промпта"
+              className="flex items-center gap-1 rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              Превью
+            </button>
+          </div>
         </div>
         <StylesMultiSelect
           id="style"

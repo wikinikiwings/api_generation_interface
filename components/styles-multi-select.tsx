@@ -119,7 +119,10 @@ export function StylesMultiSelect({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className={cn(
+          "flex h-9 w-full items-center justify-between rounded-md border border-input px-3 py-1 text-sm shadow-sm transition-colors duration-300 hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          selectedIds.length > 0 ? "bg-violet-500/15" : "bg-background"
+        )}
       >
         <span className="truncate">{triggerLabel}</span>
         <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
