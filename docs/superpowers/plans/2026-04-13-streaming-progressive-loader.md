@@ -15,8 +15,10 @@
 
 **Reference (READ THIS FIRST):** `.preview/curtain-lab/index.html` is the behavioural spec. Do not start coding until you have:
 1. Served it locally (`cd .preview/curtain-lab && npx -y serve -l 5174`).
-2. Opened `http://localhost:5174/` and watched tile **E (extrapolated strip)** run through at least three `replay all` cycles on scene `sunset`, with these controls: `load duration = 5000`, `bursty = on, count = 15`, `smoothing τ = 1500`, `feather = 38%`, `strip rows = 32`, `max blur = 80`, `γ = 100`.
+2. Opened `http://localhost:5174/` and watched tile **E (extrapolated strip)** run through at least three `replay all` cycles on scene `sunset`, with these controls: `load duration = 5000`, `bursty = on, count = 16`, `smoothing τ = 1500`, `feather = 15%`, `strip rows = 15`, `extrapolate blur = 120`, `max blur = 80`, `γ = 100`.
 3. Confirmed you can describe in one sentence what each of the three on-screen layers does at t=30 %, t=70 %, and t=100 % load progress.
+
+These values match `public/blur-up-config.json` defaults (Task 5.5).
 
 **This plan is a port.** The algorithms, constants, and visual feel are locked. The job is carrying the lab's variant E into production against a real network stream.
 
@@ -110,8 +112,8 @@ Terms used throughout this plan and in the lab. When in doubt, point yourself ba
 - **rawProgress** — the instantaneous byte ratio `bytesLoaded / bytesTotal`. Jumps in steps as TCP bursts land.
 - **smoothedProgress** — exponentially-smoothed copy of rawProgress. Time constant τ = `DEFAULT_TAU_MS = 1500` during streaming; squeezed to `DEFAULT_COMPLETION_TAU_MS = 300` after `phase = "decoded"`. **This is what the feather line and blur ramp track** — never expose rawProgress to CSS directly; the bursts would flicker.
 - **frontier** — the current position of the feather line, expressed as a percentage of frame height. Synonym for `smoothedProgress * 100%`. Pushed to CSS as `--frontier`.
-- **feather** — the soft-edged transition zone of the sharp layer's mask, width = `FEATHER_PCT = 38%` of frame height. Everything `frontier - feather%` and above is fully opaque sharp; `frontier - feather% .. frontier` fades; below frontier is transparent.
-- **strip** — a horizontal band of the last N source rows (`BACKDROP_STRIP_ROWS = 32`) currently decoded, sampled at `y = srcH * smoothedProgress`. Drawn stretched onto the backdrop canvas.
+- **feather** — the soft-edged transition zone of the sharp layer's mask, width = `featherPct = 15%` of frame height (default; tunable via `public/blur-up-config.json`). Everything `frontier - feather%` and above is fully opaque sharp; `frontier - feather% .. frontier` fades; below frontier is transparent.
+- **strip** — a horizontal band of the last N source rows (`stripRows = 15`, default; tunable via config) currently decoded, sampled at `y = srcH * smoothedProgress`. Drawn stretched onto the backdrop canvas.
 - **haze** — the visual result of the strip after CSS blur (`BACKDROP_BLUR_PX = 120`). A soft colour field that matches the colour about to be revealed at the feather line.
 - **time-blur** — the progress-driven CSS blur on the sharp canvas. Strength = `MAX_TIME_BLUR_PX * (1 - smoothedProgress) ^ TIME_BLUR_GAMMA`. Starts at 80 px, ends at 0.
 - **completion squeeze** — when the loader emits `phase = "decoded"`, the hook switches the smoother's τ from 1500 ms to 300 ms so the remaining smoothed animation finishes crisply on fast connections instead of asymptoting for several seconds.
@@ -151,11 +153,14 @@ Terms used throughout this plan and in the lab. When in doubt, point yourself ba
 - `lib/streaming-image/smoothing.ts` — pure EMA helper
 - `lib/streaming-image/loader.ts` — fetch + ImageDecoder
 - `lib/streaming-image/index.ts` — barrel re-exports
+- `lib/streaming-image/config.ts` — runtime config loader (fetches `/blur-up-config.json`)
 - `lib/streaming-image/__tests__/smoothing.test.ts`
 - `lib/streaming-image/__tests__/loader.test.ts`
+- `lib/streaming-image/__tests__/config.test.ts`
 - `lib/use-streaming-image.ts` — React hook
 - `lib/__tests__/use-streaming-image.test.tsx`
 - `components/__tests__/blur-up-image.test.tsx`
+- `public/blur-up-config.json` — runtime-tunable constants (no rebuild required)
 - `.preview/streaming-feasibility/index.html` — Task 0 probe
 
 **Modify:**
@@ -1152,14 +1157,14 @@ Find the block beginning `/* ===================================================
   -webkit-mask-image: linear-gradient(
     to bottom,
     black 0%,
-    black calc(var(--frontier, 0%) - var(--feather-pct, 38%)),
+    black calc(var(--frontier, 0%) - var(--feather-pct, 15%)),
     transparent var(--frontier, 0%),
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     black 0%,
-    black calc(var(--frontier, 0%) - var(--feather-pct, 38%)),
+    black calc(var(--frontier, 0%) - var(--feather-pct, 15%)),
     transparent var(--frontier, 0%),
     transparent 100%
   );
@@ -1201,6 +1206,265 @@ Expected: PASS. If the build fails on orphan `@property --reveal` references in 
 ```bash
 git add app/globals.css
 git commit -m "feat(blur-up-image): streaming-driven CSS for canvas layers"
+```
+
+---
+
+## Task 5.5: Runtime config loader (`public/blur-up-config.json` + `lib/streaming-image/config.ts`)
+
+**Files:**
+- Create: `public/blur-up-config.json`
+- Create: `lib/streaming-image/config.ts`
+- Create: `lib/streaming-image/__tests__/config.test.ts`
+
+**Why:** All visual + smoothing constants need to be tunable at runtime without rebuild or redeploy. `public/*` is served as static assets by Next.js in both dev and prod — editing the JSON and Ctrl+R-ing the browser updates values for the next page load. Constants live in module scope and are fetched once per session (“one fetch + module cache” per the design questions).
+
+Design decisions (locked from earlier Q&A):
+- 9 fields, all visual/smoothing knobs from the lab — no `revealMs`/`burstCount` (lab-only).
+- Module-scope singleton: first call to `getBlurUpConfig()` triggers the `fetch('/blur-up-config.json')`; subsequent calls return the cached promise.
+- Validation: per-field range check; **invalid field falls back to its default silently with `console.warn(…)`**, the rest of the config still applies (no all-or-nothing). JSON parse error → full fallback to defaults + console.warn.
+- The hook (`useStreamingImage`) and the component (`BlurUpImage`) both read from this config via the same `getBlurUpConfig()` accessor; they must be okay with the first render seeing defaults until the fetch resolves (one extra render at most — acceptable, this is dev-tuning code).
+
+- [ ] **Step 1: Write failing tests**
+
+`lib/streaming-image/__tests__/config.test.ts`:
+```ts
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { getBlurUpConfig, _resetForTest, BLUR_UP_DEFAULTS } from "@/lib/streaming-image/config";
+
+beforeEach(() => {
+  _resetForTest();
+  vi.restoreAllMocks();
+});
+
+describe("getBlurUpConfig", () => {
+  it("returns defaults when fetch is unavailable / fails", async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError("net"));
+    const cfg = await getBlurUpConfig();
+    expect(cfg).toEqual(BLUR_UP_DEFAULTS);
+  });
+
+  it("merges valid fields, overriding defaults", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ featherPct: 22, stripRows: 24 }), { status: 200 })
+    );
+    const cfg = await getBlurUpConfig();
+    expect(cfg.featherPct).toBe(22);
+    expect(cfg.stripRows).toBe(24);
+    // untouched fields fall through:
+    expect(cfg.tauMs).toBe(BLUR_UP_DEFAULTS.tauMs);
+  });
+
+  it("falls back per-field on out-of-range values + warns", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ featherPct: 999, stripRows: -5, tauMs: 800 }), { status: 200 })
+    );
+    const cfg = await getBlurUpConfig();
+    expect(cfg.featherPct).toBe(BLUR_UP_DEFAULTS.featherPct);  // out-of-range → default
+    expect(cfg.stripRows).toBe(BLUR_UP_DEFAULTS.stripRows);    // out-of-range → default
+    expect(cfg.tauMs).toBe(800);                                // valid → honoured
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("falls back per-field on wrong type + warns", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ featherPct: "15", stripRows: null }), { status: 200 })
+    );
+    const cfg = await getBlurUpConfig();
+    expect(cfg.featherPct).toBe(BLUR_UP_DEFAULTS.featherPct);
+    expect(cfg.stripRows).toBe(BLUR_UP_DEFAULTS.stripRows);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("falls back to all defaults on JSON parse error + warns", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    global.fetch = vi.fn().mockResolvedValue(new Response("{ not json", { status: 200 }));
+    const cfg = await getBlurUpConfig();
+    expect(cfg).toEqual(BLUR_UP_DEFAULTS);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("caches the result — second call does not re-fetch", async () => {
+    const f = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ featherPct: 17 }), { status: 200 })
+    );
+    global.fetch = f;
+    await getBlurUpConfig();
+    await getBlurUpConfig();
+    await getBlurUpConfig();
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+});
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+Run: `npm test -- lib/streaming-image/__tests__/config.test.ts`
+Expected: FAIL, "Cannot find module".
+
+- [ ] **Step 3: Write the JSON file**
+
+`public/blur-up-config.json`:
+```json
+{
+  "_comment": "Runtime tuning for BlurUpImage streaming reveal. Edit + Ctrl+R in browser to apply. Invalid fields silently fall back to defaults (see console). Schema: lib/streaming-image/config.ts.",
+  "featherPct": 15,
+  "stripRows": 15,
+  "backdropBlurPx": 120,
+  "maxTimeBlurPx": 80,
+  "timeBlurGamma": 1.6,
+  "tauMs": 1500,
+  "completionTauMs": 300,
+  "minDecodeIntervalMs": 60,
+  "fallbackTotalMs": 4000
+}
+```
+
+- [ ] **Step 4: Implement the loader**
+
+`lib/streaming-image/config.ts`:
+```ts
+/**
+ * Runtime config for BlurUpImage streaming reveal.
+ *
+ * Source: `public/blur-up-config.json`, fetched once per session at
+ * first call to getBlurUpConfig(). Cached in module scope. Editing the
+ * JSON requires a full page reload (Ctrl+Shift+R) to take effect.
+ *
+ * Validation policy: each field is checked against a per-field type and
+ * range. Invalid fields fall back to BLUR_UP_DEFAULTS[field] silently
+ * (with one console.warn per invalid field). JSON parse errors fall
+ * back to the full default object.
+ *
+ * Defaults match the curtain-lab snapshot approved 2026-04-13:
+ *   featherPct=15, stripRows=15, backdropBlurPx=120, maxTimeBlurPx=80,
+ *   timeBlurGamma=1.6 (from lab's topBlurOpacity=100 → γ = 1+(100-70)/50),
+ *   tauMs=1500, completionTauMs=300, minDecodeIntervalMs=60,
+ *   fallbackTotalMs=4000.
+ */
+export interface BlurUpConfig {
+  /** Feather mask width as % of frame height. Range: 0–60. */
+  featherPct: number;
+  /** Source rows sampled into backdrop strip. Range: 1–128. */
+  stripRows: number;
+  /** CSS blur applied to backdrop canvas. Range: 0–300 px. */
+  backdropBlurPx: number;
+  /** Max blur on sharp canvas at smoothedProgress=0. Range: 0–200 px. */
+  maxTimeBlurPx: number;
+  /** Gamma curve for blur ramp. >1 = blur lingers. Range: 0.2–3. */
+  timeBlurGamma: number;
+  /** EMA time constant during streaming. Range: 0–10000 ms. */
+  tauMs: number;
+  /** EMA tau after phase=decoded (completion squeeze). Range: 0–5000 ms. */
+  completionTauMs: number;
+  /** Min ms between partial decodes. Range: 16–1000 ms. */
+  minDecodeIntervalMs: number;
+  /** Linear-time progress fallback when Content-Length is missing. Range: 500–60000 ms. */
+  fallbackTotalMs: number;
+}
+
+export const BLUR_UP_DEFAULTS: BlurUpConfig = {
+  featherPct: 15,
+  stripRows: 15,
+  backdropBlurPx: 120,
+  maxTimeBlurPx: 80,
+  timeBlurGamma: 1.6,
+  tauMs: 1500,
+  completionTauMs: 300,
+  minDecodeIntervalMs: 60,
+  fallbackTotalMs: 4000,
+};
+
+type FieldSpec = { min: number; max: number };
+const SPECS: Record<keyof BlurUpConfig, FieldSpec> = {
+  featherPct:          { min: 0,    max: 60 },
+  stripRows:           { min: 1,    max: 128 },
+  backdropBlurPx:      { min: 0,    max: 300 },
+  maxTimeBlurPx:       { min: 0,    max: 200 },
+  timeBlurGamma:       { min: 0.2,  max: 3 },
+  tauMs:               { min: 0,    max: 10000 },
+  completionTauMs:     { min: 0,    max: 5000 },
+  minDecodeIntervalMs: { min: 16,   max: 1000 },
+  fallbackTotalMs:     { min: 500,  max: 60000 },
+};
+
+let cached: Promise<BlurUpConfig> | null = null;
+
+/** Module-scope singleton accessor. First call triggers the fetch;
+ * subsequent calls return the cached promise. SSR-safe: returns
+ * BLUR_UP_DEFAULTS synchronously when window is undefined. */
+export function getBlurUpConfig(): Promise<BlurUpConfig> {
+  if (typeof window === "undefined") return Promise.resolve(BLUR_UP_DEFAULTS);
+  if (cached) return cached;
+  cached = (async () => {
+    try {
+      const res = await fetch("/blur-up-config.json", { cache: "no-cache" });
+      if (!res.ok) {
+        console.warn(`[blur-up-config] HTTP ${res.status}, using defaults`);
+        return BLUR_UP_DEFAULTS;
+      }
+      let raw: unknown;
+      try {
+        raw = await res.json();
+      } catch (e) {
+        console.warn("[blur-up-config] JSON parse error, using defaults:", e);
+        return BLUR_UP_DEFAULTS;
+      }
+      return validate(raw);
+    } catch (e) {
+      console.warn("[blur-up-config] fetch failed, using defaults:", e);
+      return BLUR_UP_DEFAULTS;
+    }
+  })();
+  return cached;
+}
+
+function validate(raw: unknown): BlurUpConfig {
+  if (raw == null || typeof raw !== "object") return BLUR_UP_DEFAULTS;
+  const out: BlurUpConfig = { ...BLUR_UP_DEFAULTS };
+  const obj = raw as Record<string, unknown>;
+  (Object.keys(SPECS) as Array<keyof BlurUpConfig>).forEach((key) => {
+    if (!(key in obj)) return;
+    const v = obj[key];
+    const spec = SPECS[key];
+    if (typeof v !== "number" || !Number.isFinite(v)) {
+      console.warn(`[blur-up-config] field '${String(key)}' is not a finite number (got ${JSON.stringify(v)}), using default ${BLUR_UP_DEFAULTS[key]}`);
+      return;
+    }
+    if (v < spec.min || v > spec.max) {
+      console.warn(`[blur-up-config] field '${String(key)}'=${v} out of range [${spec.min}, ${spec.max}], using default ${BLUR_UP_DEFAULTS[key]}`);
+      return;
+    }
+    out[key] = v;
+  });
+  return out;
+}
+
+/** Test-only: clear the module cache so the next call re-fetches. */
+export function _resetForTest(): void {
+  cached = null;
+}
+```
+
+- [ ] **Step 5: Re-export from barrel**
+
+Add to `lib/streaming-image/index.ts`:
+```ts
+export { getBlurUpConfig, BLUR_UP_DEFAULTS, type BlurUpConfig } from "./config";
+```
+
+- [ ] **Step 6: Run tests**
+
+Run: `npm test -- lib/streaming-image/__tests__/config.test.ts`
+Expected: PASS, 6/6.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add public/blur-up-config.json lib/streaming-image/config.ts lib/streaming-image/__tests__/config.test.ts lib/streaming-image/index.ts
+git commit -m "feat(streaming-image): runtime config loader (public/blur-up-config.json)"
 ```
 
 ---
@@ -1289,17 +1553,15 @@ Expected: FAIL with type error or prop mismatch (existing component has differen
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useStreamingImage } from "@/lib/use-streaming-image";
+import { getBlurUpConfig, BLUR_UP_DEFAULTS, type BlurUpConfig } from "@/lib/streaming-image/config";
 
-// Tuned in the curtain-lab at .preview/curtain-lab/ on 2026-04-13.
-// User-approved settings snapshot:
-//   featherPct=38, stripRows=32, extrapolateBlur=120, topBlur=80,
-//   topBlurOpacity=100 (→ γ = 1 + (100−70)/50 = 1.6), smoothMs=1500.
-const FEATHER_PCT = 38;           // % of frame height
-const BACKDROP_STRIP_ROWS = 32;   // source rows copied into haze canvas
-const BACKDROP_BLUR_PX = 120;     // CSS blur on backdrop
-const MAX_TIME_BLUR_PX = 80;      // sharp blur at smoothed=0
-const TIME_BLUR_GAMMA = 1.6;      // ramp curve; >1 = blur lingers
-const DEFAULT_TAU_MS = 1500;      // streaming-phase EMA time constant
+// All visual + smoothing constants come from public/blur-up-config.json
+// via getBlurUpConfig() (Task 5.5). This component reads the config
+// once on mount; the loader caches it so subsequent mounts are sync.
+//
+// Edit the JSON and Ctrl+Shift+R the browser to apply changes — no
+// rebuild, no redeploy. Defaults (BLUR_UP_DEFAULTS) match the curtain-
+// lab snapshot approved 2026-04-13.
 
 export interface BlurUpImageProps {
   sharpSrc: string;
@@ -1348,8 +1610,23 @@ export const BlurUpImage = React.forwardRef<HTMLDivElement, BlurUpImageProps>(
     const sharpCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
     const backdropCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
+    // Runtime config. Starts as defaults so SSR + first-paint don't
+    // wait for the fetch; the singleton resolves within ~50ms in dev
+    // and is cached forever, so subsequent mounts are sync (the setState
+    // in the effect is a no-op when the ref equality holds).
+    const [config, setConfig] = React.useState<BlurUpConfig>(BLUR_UP_DEFAULTS);
+    React.useEffect(() => {
+      let cancelled = false;
+      void getBlurUpConfig().then((cfg) => {
+        if (!cancelled) setConfig(cfg);
+      });
+      return () => { cancelled = true; };
+    }, []);
+
     const { phase, smoothedProgress, frame, error } = useStreamingImage(sharpSrc, {
-      tauMs: DEFAULT_TAU_MS,
+      tauMs: config.tauMs,
+      completionTauMs: config.completionTauMs,
+      minDecodeIntervalMs: config.minDecodeIntervalMs,
     });
 
     // Dispatch onLoad / onError once per state transition.
@@ -1394,17 +1671,17 @@ export const BlurUpImage = React.forwardRef<HTMLDivElement, BlurUpImageProps>(
         1,
         Math.min(rowsSrc, Math.floor(srcH * smoothedProgress))
       );
-      const stripN = Math.max(1, Math.min(BACKDROP_STRIP_ROWS, stripBottom));
+      const stripN = Math.max(1, Math.min(config.stripRows, stripBottom));
       const stripY = Math.max(0, stripBottom - stripN);
       ctxB.clearRect(0, 0, backdrop.width, backdrop.height);
       ctxB.drawImage(src, 0, stripY, srcW, stripN, 0, 0, backdrop.width, backdrop.height);
-    }, [frame, smoothedProgress]);
+    }, [frame, smoothedProgress, config.stripRows]);
 
     // Style variables pushed per render.
     const timeBlurPx = (() => {
       if (phase === "decoded" && smoothedProgress >= 0.999) return 0;
       const inv = Math.max(0, 1 - smoothedProgress);
-      return Math.round(MAX_TIME_BLUR_PX * Math.pow(inv, TIME_BLUR_GAMMA));
+      return Math.round(config.maxTimeBlurPx * Math.pow(inv, config.timeBlurGamma));
     })();
 
     const revealState =
@@ -1415,8 +1692,8 @@ export const BlurUpImage = React.forwardRef<HTMLDivElement, BlurUpImageProps>(
     const rootStyle: React.CSSProperties = {
       ["--frontier" as string]: `${(smoothedProgress * 100).toFixed(2)}%`,
       ["--time-blur" as string]: `${timeBlurPx}px`,
-      ["--feather-pct" as string]: `${FEATHER_PCT}%`,
-      ["--backdrop-blur" as string]: `${BACKDROP_BLUR_PX}px`,
+      ["--feather-pct" as string]: `${config.featherPct}%`,
+      ["--backdrop-blur" as string]: `${config.backdropBlurPx}px`,
     };
 
     const fitClass =
@@ -1464,6 +1741,12 @@ git commit -m "feat(blur-up-image): streaming canvas renderer"
 ---
 
 ## Task 7: Update `ImageDialog` ref target (HTMLImageElement → HTMLDivElement)
+
+**Status:** SKIPPED — `components/image-dialog.tsx` does not use a ref to the `BlurUpImage` component. Grep for `HTMLImageElement` / `useRef` / `ref=` in that file returns zero results. The dialog places `<BlurUpImage>` inside its markup without attaching a ref, so the change of ref target from `<img>` to `<div>` is a no-op for callers.
+
+Verified 2026-04-16 during Task 6 integration pass — `npx tsc --noEmit` returns EXIT=0 with zero type errors after the component rewrite.
+
+(Original steps below preserved for historical reference.)
 
 **Files:**
 - Modify: `components/image-dialog.tsx` (ref type, no other logic changes expected)
@@ -1763,12 +2046,17 @@ Loss vs main path: the extrapolated strip has no real pixels to sample, so the h
 **Spec coverage:**
 - Fetch-stream with ImageDecoder for partial decodes → Task 0, 3
 - Exponential progress smoothing → Task 1, 4
+- Runtime-tunable constants (no rebuild) → Task 5.5
 - Canvas-based two-layer render → Task 6
 - Strip anchored at smoothedProgress (not rawProgress) → Task 6, Step 3, lines beginning "Backdrop strip anchored at smoothedProgress"
 - Time-ramping blur on sharp canvas → Task 6, `timeBlurPx` computation
 - Preserve drag-drop, zoom-pan, download → Task 7 (ref), Task 9 (drag), Task 10 (manual)
 - Reduced-motion → Task 5 (CSS), Task 10 (manual)
 - Cache integration → Task 4, Task 11
+
+**Plan history:**
+- 2026-04-13 v1 — initial plan with hardcoded constants in component (featherPct=38, stripRows=32).
+- 2026-04-16 v2 — user reviewed lab and chose featherPct=15, stripRows=15; added Task 5.5 (runtime config loader); rewrote Task 6 Step 3 to pull all constants from config; updated Glossary, File Structure, Reference, and CSS defaults accordingly.
 
 **Placeholder scan:** None. Every code step has complete code; every test shows what to assert.
 
@@ -1784,3 +2072,201 @@ Loss vs main path: the extrapolated strip has no real pixels to sample, so the h
 - `ImageDecoder.decode({ completeFramesOnly: false })` may throw on very early bytes → loader's try/catch swallows; last-good frame survives.
 
 **Effort estimate:** 5 working days. Task 0 is a day. Tasks 1-4 parallel-friendly in one day. Task 5-7 one day. Tasks 8-11 one day. Task 12 + polish one day.
+
+---
+
+# POST-IMPLEMENTATION STATUS (2026-04-16)
+
+> **⚠️ IMPORTANT — READ BEFORE RESUMING THIS WORK**
+>
+> The initial implementation (Tasks 1–9) was completed and merged, but **manual QA surfaced three issues that led the user to revert the feature branch**. This section documents what we learned, what worked, and what is required for a successful re-attempt. The previous session ran out of context before Task 10/11/12 could be polished.
+
+## What shipped (before revert)
+
+Commits on the implementation branch (in order):
+- `1b27b89` Task 1 — ProgressSmoother (7/7 tests)
+- `ef65686` Task 2 — shared types
+- `50e730f` Task 3 — streaming loader (4/4 tests)
+- `f95da2f` Task 4 — useStreamingImage hook (4/4 tests)
+- `c498774` Task 5 — globals.css
+- `7894eef` Task 5.5 — runtime config (6/6 tests)
+- `d5a68d1` Task 6 — blur-up-image component (5/5 tests)
+- `55d02f3` Task 8 — removed `revealMs` from all call sites
+- `4c8efd6` Task 9 — drag-drop regression guard (2/2 tests)
+- `a79ad8a` **Critical fix commit**: cache-warm short-circuit + anti-flicker + seed blob from stream (merges Task 11 early)
+
+Task 7 was skipped (`image-dialog.tsx` never held a ref to `BlurUpImage`). Tests finished at 95/95 passing, `tsc --noEmit` clean. `@vitejs/plugin-react` was added as a devDependency to make component tests with JSX parse under Vitest — no runtime impact on Next.js.
+
+The feature worked **partially** in the browser but showed three defects that blocked acceptance. See below.
+
+## Three defects to resolve before re-attempting
+
+### Defect 1 — Dialog does not open on thumbnail click (UNRESOLVED)
+
+**Symptom:** User-reported. Clicking a thumbnail in either History Sidebar or Output grid does nothing. Drag-and-drop still works. The Download button still works.
+
+**Root cause hypothesis (unverified):** `components/image-dialog.tsx` uses `triggerRef.current.firstElementChild` in `captureTriggerRect()` to measure the FLIP animation source rect. Previously the first child was the `<img>` element rendered by the old `BlurUpImage`; after our rewrite, the first child is either a `<canvas>` (streaming path) or `<img>` (cache-warm path), and the root `.blur-up-root` div that now wraps those has its own layout.
+
+**But that shouldn't prevent `onClick` from bubbling** — `DialogTrigger asChild` forwards pointer events to its child. Two more plausible mechanisms:
+
+1. A CSS layout change makes the thumbnail element 0x0 on first paint (because the root div uses `inline-block` by default and the canvas inside has `width/height` set in attributes, not CSS) and the click lands on nothing. Needs inspection: `getComputedStyle(thumbnailRoot)` after mount to verify width/height.
+
+2. A JavaScript error in the FLIP animation path (e.g., `contentCallbackRef` runs before layout is settled because the root div has zero height while canvases wait for their first paint), leaving Dialog in a broken state. Needs: open DevTools Console **before** clicking, and verify whether any error appears.
+
+**Recommended debugging order when resuming:**
+1. Open DevTools Console, click a thumbnail, and capture any error output.
+2. Inspect `.blur-up-root` with Elements tab — verify it has real width/height.
+3. Add a temporary `console.log("[ImageDialog] handleOpenChange called with", next)` at the top of `handleOpenChange` in image-dialog.tsx — see if it's even being called. If not, the click isn't reaching DialogTrigger. If yes, the bug is downstream.
+
+**Possible fix direction:** Make the root `.blur-up-root` div claim the parent's dimensions explicitly via CSS (`width: 100%; height: 100%` plus the existing `display: block/inline-block` control), not rely on the inner canvas's attribute sizes to size the parent. Also ensure `<canvas>` elements have `display: block` to prevent inline-content baseline quirks.
+
+### Defect 2 — Animation not visible for most cases (UNRESOLVED — root cause identified)
+
+**Symptom:** On Slow 4G throttling (real, confirmed via 21s Finish / 2.9MB transferred in Network tab), the reveal animation plays for a fraction of a second with a flicker or two, then the full image appears as one chunk rather than progressively revealing top-to-bottom.
+
+**Root cause — confirmed empirically:**
+
+Our `mid_*.jpg` variants are **baseline JPEGs (FFC0 marker)**, not progressive JPEGs (FFC2). Diagnostic run 2026-04-16:
+
+```
+Total size: 113625
+Content-Type: image/jpeg
+First 30 bytes: ff d8 ff e0 00 10 4a 46 49 46 00 01 01 00 00 01 ...
+FOUND BASELINE DCT (FFC0) at offset 632
+```
+
+`ImageDecoder.decode({completeFramesOnly: false})` for a **baseline** JPEG cannot emit a partial bitmap with growing `displayHeight` — the entire frame must be received before the decoder produces any bitmap. So our loader diligently tracks `bytesLoaded/bytesTotal` (animating the feather line and blur correctly), but `frame.bitmap` stays `undefined` until the stream completes, and then jumps to full-height in one decode.
+
+**Visually this looks like:** empty dark frame with the smoothed frontier line sliding down → then a snap to full image at the end. The "flicker" reported is the brief moment when the final decode lands and the `clearRect` + `drawImage` race before the final paint settles.
+
+### Defect 3 — Flicker during reveal (PARTIAL FIX, NOT SUFFICIENT)
+
+**Symptom:** 1-2 visible flashes during the reveal.
+
+**Fix applied (commit `a79ad8a`):** Added `ResizeObserver` gate so the draw-effect skips until root div has `W >= 2 && H >= 2`. Prevents the 0×0 canvas → real-size flash.
+
+**Why it didn't fully work:** The remaining flickers are the baseline-JPEG decode completing — the moment the final `decode({completeFramesOnly: true})` lands, we clear and redraw with the full bitmap. Because baseline doesn't give partial frames, the transition from "empty canvas" to "full canvas" is instant, and any CSS state in flight (blur, mask, opacity) produces a visible pop. Only fixing Defect 2 (making JPEGs actually progressive) will eliminate this.
+
+## Where mid_*.jpg files come from — UNKNOWN (REQUIRED FINDING BEFORE RESUMING)
+
+During the session we could not locate the code path that produces `mid_*.jpg` files. Grep across `*.ts` / `*.tsx` for:
+- `image-variants` / `createImageVariants`
+- `mid_` / `thumb_` / `saveMid` / `writeMid`
+- `sharp` (imports)
+
+Returned nothing except the server route that **reads** them (`app/api/history/image/[filename]/route.ts`) and the unused `lib/image-variants.ts` file.
+
+**Finding this is the first required step of the resumed work.** Possible locations:
+- Might be produced by an external service (WaveSpeed?) and returned in the generation response already sized.
+- Might live in a script / migration not in the main tree.
+- Might live in a sibling repo (note the project is the `wavespeed-claude` successor to `viewcomfy-claude`).
+
+**How to find it:** Open DevTools Network tab, generate a fresh image, and watch which backend call returns a body containing (or URL pointing to) `mid_<uuid>.jpg`. Check the POST response payload. Also inspect HISTORY_IMAGES_DIR (path from `lib/history-db.getHistoryImagesDir()`) and look at file creation timestamps relative to generation time.
+
+## The right fix — Strategy A + B
+
+### Strategy A — Make mid_*.jpg files progressive (real solution)
+
+Once the generation path is located:
+
+1. **New files** — pipe the incoming bytes through `sharp(input).jpeg({ progressive: true, quality: 85 })` before writing to disk. `sharp` is already a dependency (`package.json` declares `^0.34.5`, and Next.js pulls in `^0.33.5` transitively). Just adding the import + pipe is ~5 lines.
+2. **Existing files** — one-off migration script that walks `HISTORY_IMAGES_DIR`, re-encodes every `mid_*.jpg` file through sharp with progressive:true, preserving filename. Idempotent — `sharp` on an already-progressive input just re-encodes to the same thing. Runtime: ~50ms per file × N files.
+
+`canvas.toBlob("image/jpeg")` in the browser always emits baseline — this cannot be fixed client-side without wasm (jsquash/mozjpeg-wasm adds ~500KB). Server re-encoding is the right choice.
+
+**Verify the fix worked** by re-running the diagnostic script:
+```js
+// check_jpeg.js — scan bytes for FFC0 vs FFC2 marker. See commit history.
+```
+Expected output after fix: `FOUND PROGRESSIVE DCT (FFC2) at offset N`.
+
+### Strategy B — Minimum animation duration fallback (belt-and-suspenders)
+
+Even after Strategy A, the animation can feel absent when:
+- HTTP caching gives near-instant byte delivery (200–400ms total) — EMA completion squeeze (tauMs=300) finishes in ~500ms total, which reads as "instant" on fast hardware.
+- The browser caches a variant from a previous session and serves it from disk cache in <100ms.
+
+**Fix:** Add a `minRevealMs` knob to `public/blur-up-config.json` (suggested default: **800**). In `useStreamingImage`:
+
+```ts
+const revealStartRef = React.useRef<number | null>(null);
+// ... on phase transition out of "idle":
+if (revealStartRef.current === null) revealStartRef.current = performance.now();
+// In the rAF loop, clamp smoothedProgress:
+const elapsed = performance.now() - (revealStartRef.current ?? performance.now());
+const minProgress = Math.min(1, elapsed / minRevealMs);
+const effectiveSmoothed = Math.min(smoothedProgress, minProgress);
+// Expose effectiveSmoothed as smoothedProgress to the component.
+```
+
+This **ceilings** the smoothed progress so that even on instant-delivery paths the reveal takes at least `minRevealMs`. Applies to both warm HTTP cache and future baseline-fallback scenarios.
+
+**Do NOT apply this to the cache-warm short-circuit path** (blob cache hit). That path intentionally renders instantly with no animation — adding minRevealMs there would regress the "history sidebar reopen feels instant" behavior the user explicitly confirmed worked in `a79ad8a`.
+
+## Required resumption workflow
+
+**Phase 0 — Locate mid_*.jpg generation (BLOCKER for Strategy A)**
+- Follow the Network-tab approach above.
+- Document the finding in a new scratch file `docs/superpowers/findings/2026-04-XX-mid-jpg-origin.md`.
+- If mid files come from an external service that we cannot control, Strategy A requires adding a server-side re-encode layer in `app/api/history/image/[filename]/route.ts` or in whatever code pipes bytes from the service to disk.
+
+**Phase 1 — Implement Strategy B first (cheap, independent of Phase 0)**
+- Add `minRevealMs` to config with default 800.
+- Update hook as shown above.
+- Test: with baseline JPEG (existing mid files), verify animation visibly lasts ~800ms even if the fetch completes instantly.
+
+**Phase 2 — Implement Strategy A (after Phase 0 done)**
+- Add sharp progressive re-encode at write time.
+- Write and run one-off migration script for existing files. Include dry-run flag.
+- Verify marker via diagnostic script on a post-migration file.
+
+**Phase 3 — Debug dialog-doesn't-open (Defect 1)**
+- Console check first.
+- If FLIP-logic related, fix `captureTriggerRect` to handle canvas-bearing triggers, or add explicit width/height to `.blur-up-root` via CSS.
+
+**Phase 4 — Re-QA against original Task 10 checklist.**
+
+## Infrastructure notes for next session
+
+- `@vitejs/plugin-react` is required for component-level Vitest tests to parse JSX. Already added as devDependency — survives a revert of the feature branch only if the package.json change was kept or re-added.
+- Commit message quoting gotcha: `cmd.exe` mangles `git commit -m "..."` quoting. Write message to `.git/COMMIT_MSG_TMP` and use `git commit -F .git/COMMIT_MSG_TMP`.
+- Always `git add <specific paths>` not `git add -A` — the plan file will otherwise leak into feature commits.
+- DC tool `cmd` shell only — `powershell.exe` ENOENT-crashes on this machine.
+- `ReadableStream.tee()` doubles memory for stream duration; acceptable for 150KB mid files.
+
+## Diagnostic artefact to recreate if needed
+
+```js
+// scripts/check-jpeg-marker.js
+const fs = require('fs');
+const http = require('http');
+const URL_TO_CHECK = process.argv[2];
+if (!URL_TO_CHECK) { console.error('usage: node check-jpeg-marker.js <http-url>'); process.exit(1); }
+http.get(URL_TO_CHECK, (res) => {
+  const chunks = [];
+  res.on('data', (d) => chunks.push(d));
+  res.on('end', () => {
+    const buf = Buffer.concat(chunks);
+    console.log('Total size:', buf.length);
+    console.log('Content-Type:', res.headers['content-type']);
+    for (let i = 0; i < buf.length - 1; i++) {
+      if (buf[i] === 0xFF) {
+        const m = buf[i + 1];
+        if (m === 0xC0) { console.log('BASELINE DCT (FFC0) at', i); return; }
+        if (m === 0xC2) { console.log('PROGRESSIVE DCT (FFC2) at', i); return; }
+      }
+    }
+    console.log('No SOF marker');
+  });
+}).on('error', (e) => console.error(e.message));
+```
+
+Run: `node scripts/check-jpeg-marker.js http://localhost:3000/api/history/image/mid_<uuid>.jpg`
+
+## Summary of outcome
+
+- **Architecture is sound** — byte-driven EMA progress, two-canvas renderer, cache-warm short-circuit, anti-flicker ResizeObserver all work as designed.
+- **Feature fails visually** because our content is baseline JPEG and `ImageDecoder` cannot deliver partial frames for baseline. Not a bug in our streaming machinery — a mismatch between the algorithm's prerequisite (progressive JPEG) and the content we're actually serving.
+- **Fix requires two server-side changes** (write progressive, migrate existing) plus one UX safety net (minRevealMs).
+- **The dialog-click bug is a separate issue** that needs a 10-minute debug session once the project is un-reverted and someone can click a thumbnail with DevTools open.
+
