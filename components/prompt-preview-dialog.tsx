@@ -26,7 +26,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { partitionStyles, type StyleZone } from "@/lib/styles/classify";
+import { classifyStyle, partitionStyles, type StyleZone } from "@/lib/styles/classify";
 
 interface PromptPreviewDialogProps {
   open: boolean;
@@ -158,10 +158,21 @@ export function PromptPreviewDialog({
     [activeStyles]
   );
 
-  const untickedStyles = React.useMemo<Style[]>(
-    () => styles.filter((s) => !selectedStyleIds.includes(s.id)),
-    [styles, selectedStyleIds]
-  );
+  const untickedByZone = React.useMemo(() => {
+    const out: Record<Exclude<StyleZone, "empty">, Style[]> = {
+      "attach-prefix": [],
+      wrap: [],
+      "attach-suffix": [],
+    };
+    const empty: Style[] = [];
+    for (const s of styles) {
+      if (selectedStyleIds.includes(s.id)) continue;
+      const z = classifyStyle(s);
+      if (z === "empty") empty.push(s);
+      else out[z].push(s);
+    }
+    return { ...out, empty };
+  }, [styles, selectedStyleIds]);
 
   const blocks = React.useMemo(
     () => buildPreviewBlocks(prompt, activeStyles),
@@ -223,14 +234,19 @@ export function PromptPreviewDialog({
               <>
                 {(["attach-prefix", "wrap", "attach-suffix"] as const).map(
                   (zone) => {
-                    const zoneStyles =
+                    const tickedInZone =
                       zone === "attach-prefix"
                         ? partitioned.attachPrefix
                         : zone === "wrap"
                         ? partitioned.wrap
                         : partitioned.attachSuffix;
-                    if (zoneStyles.length === 0) return null;
-                    const zoneIds = zoneStyles.map((s) => s.id);
+                    const untickedInZone = untickedByZone[zone];
+                    if (
+                      tickedInZone.length === 0 &&
+                      untickedInZone.length === 0
+                    )
+                      return null;
+                    const zoneIds = tickedInZone.map((s) => s.id);
                     const meta = ZONE_META[zone];
                     return (
                       <div key={zone} className="flex flex-col gap-1">
@@ -250,7 +266,7 @@ export function PromptPreviewDialog({
                             items={zoneIds}
                             strategy={verticalListSortingStrategy}
                           >
-                            {zoneStyles.map((s, i) => (
+                            {tickedInZone.map((s, i) => (
                               <SortableStyleRow
                                 key={s.id}
                                 style={s}
@@ -261,19 +277,29 @@ export function PromptPreviewDialog({
                             ))}
                           </SortableContext>
                         </DndContext>
+                        {untickedInZone.map((s) => (
+                          <PlainStyleRow
+                            key={s.id}
+                            style={s}
+                            onToggle={() => toggle(s.id)}
+                          />
+                        ))}
                       </div>
                     );
                   }
                 )}
 
-                {untickedStyles.length > 0 && (
+                {untickedByZone.empty.length > 0 && (
                   <div className="flex flex-col gap-1">
-                    {activeStyles.length > 0 && (
-                      <div className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        Доступны
+                    <div className="px-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Без шаблона
                       </div>
-                    )}
-                    {untickedStyles.map((s) => (
+                      <div className="text-[10px] text-muted-foreground/70">
+                        пустые prefix и suffix
+                      </div>
+                    </div>
+                    {untickedByZone.empty.map((s) => (
                       <PlainStyleRow
                         key={s.id}
                         style={s}
