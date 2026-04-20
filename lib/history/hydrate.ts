@@ -19,7 +19,7 @@ const PAGE_SIZE_DEFAULT = 20;
 // 7-day range + SSE's no-range reconnect hydrate) each get their own
 // request instead of collapsing into the first caller's opts. Same-opts
 // callers still dedupe to one fetch.
-const pendingByKey = new Map<string, Promise<void>>();
+const pendingByKey = new Map<string, Promise<number>>();
 const timersByKey = new Map<string, ReturnType<typeof setTimeout>>();
 // Monotonic counter per key: if a newer same-key call arrives while an
 // older one is in flight, the older response is discarded on return.
@@ -58,6 +58,10 @@ function buildUrl(opts: HydrateOpts): string {
  * call refetch() on the hook (which routes here) or trigger via
  * username/range change. SSE open also calls this on (re)connect.
  *
+ * Resolves with the number of rows returned by the server (0 on error or
+ * when the response is discarded by the stale-request guard). Hooks use
+ * this count to decide `hasMore` — a full page means there may be more.
+ *
  * Race-guards:
  * - pendingByKey: same-opts callers share one Promise (no duplicate fetch).
  *   Different-opts callers each get their own request.
@@ -65,22 +69,28 @@ function buildUrl(opts: HydrateOpts): string {
  *   older response is discarded.
  * - HYDRATE_DEBOUNCE_MS: rapid same-key storms collapse to one fetch.
  */
-export function hydrateFromServer(opts: HydrateOpts): Promise<void> {
+export function hydrateFromServer(opts: HydrateOpts): Promise<number> {
   const key = optsKey(opts);
   const existing = pendingByKey.get(key);
   if (existing) return existing;
 
-  const p = new Promise<void>((resolve) => {
+  const p = new Promise<number>((resolve) => {
     const timer = setTimeout(async () => {
       const myReq = (reqIdByKey.get(key) ?? 0) + 1;
       reqIdByKey.set(key, myReq);
       timersByKey.delete(key);
+      let rowCount = 0;
       try {
         const res = await fetch(buildUrl(opts), { cache: "no-store" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const rows = (await res.json()) as ServerGeneration[];
         if (myReq !== reqIdByKey.get(key)) return;
-        applyServerList(rows, { offset: opts.offset ?? 0 });
+        applyServerList(rows, {
+          offset: opts.offset ?? 0,
+          rangeFrom: opts.range?.from ? new Date(opts.range.from).setHours(0, 0, 0, 0) : undefined,
+          rangeTo: opts.range?.to ? new Date(opts.range.to).setHours(23, 59, 59, 999) : undefined,
+        });
+        rowCount = rows.length;
         debugHistory("hydrate.ok", { count: rows.length, reqId: myReq });
       } catch (e) {
         if (myReq !== reqIdByKey.get(key)) return;
@@ -88,7 +98,7 @@ export function hydrateFromServer(opts: HydrateOpts): Promise<void> {
         debugHistory("hydrate.error", { message: String(e) });
       } finally {
         pendingByKey.delete(key);
-        resolve();
+        resolve(rowCount);
       }
     }, HYDRATE_DEBOUNCE_MS);
     timersByKey.set(key, timer);

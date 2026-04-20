@@ -74,6 +74,9 @@ Then perform the action and read the console.
 | Pending card stuck after upload error | Check for `deleteEntry.error` (rollback) or `markPendingError` log. The card should show `uploadError`; deleting it triggers the pending path (`deleteEntry.pending`) — abort + revoke. |
 | Card flashes in Output then disappears (but stays in Sidebar) | TZ parse regression. A code path is doing `Date.parse(row.created_at)` directly instead of `parseServerDate` — the SQLite string is read as local time and the shifted `createdAt` falls outside today's range. Grep for `Date.parse(.*created_at` and route it through `parseServerDate`. |
 | Sidebar empty after reload until "Сбросить (7 дней)" is pressed | `hydrateFromServer` opts collapsed. Check `pendingByKey` in `hydrate.ts` — if reverted to a single `pendingHydrate` variable, concurrent callers with different ranges share one fetch with the first caller's opts, and the Sidebar's 7-day range is silently dropped. Fix: keep the per-opts keying. |
+| "Load more" button never appears in Sidebar even with >20 rows in range | `hydrateFromServer` was reverted to `Promise<void>`, or `hooks.ts` hardcodes `setHasMore(false)` after hydrate. `hasMore` must come from the actual row count (`count >= PAGE_SIZE`). Without this, invariant 11 is broken and users see only the newest 20 per range. |
+| Old entries render with empty prompt / Copy button copies "" | Pre-2026-04-15 rows store prompt under node-input keys (`"<node>-inputs-text"`), not under `prompt`. `extractLegacyPrompt` in `store.ts` must stay wired into the `try` block of `serverGenToEntry` — invariant 12. |
+| Sidebar goes empty after sliding "До" back, then forward again, and "Сбросить" can't recover it until page reload | Invariant 7 filter guard is gone. `applyServerList` must receive `rangeFrom` / `rangeTo` from the hydrate call and skip removal for entries outside that range. If the guard was stripped, entries above `rangeTo` get marked REMOVED on the narrowed hydrate, then invariant 2 blocks them on later hydrates. Fix: re-wire the rangeFrom/rangeTo passthrough in `hydrate.ts::applyServerList(...)`. |
 
 ## Architecture invariants
 
@@ -86,8 +89,15 @@ These are enforced in code (one place each) and tested:
 4. **Default hook filter** excludes REMOVED.
 5. **`deleteEntry` is idempotent** on PENDING-without-server, DELETING, REMOVED.
 6. **One writer per state-transition** — all transitions in `mutations.ts`.
-7. **`applyServerList` cross-device delete** only fires for first page (`offset=0`)
-   and only inside the response time window — pagination + old entries safe.
+7. **`applyServerList` cross-device delete** only fires for first page
+   (`offset=0`), only at or above the response's oldest timestamp
+   (pagination-safe), and only within the caller's filter range when
+   one is provided (filter-safe). The filter guard is load-bearing —
+   without it, narrowing "До" marks recent-but-out-of-filter entries
+   REMOVED, and invariant 2 then blocks their resurrection on the next
+   hydrate → the user sees nothing until a page reload. Callers MUST
+   forward `rangeFrom` / `rangeTo` from the hydrate opts (as
+   `hydrate.ts` does) whenever they queried with a range.
 8. **Animation hold doesn't block server commit** — failure path runs regardless.
 9. **Server timestamps are UTC** — SQLite `datetime('now')` writes
    `"YYYY-MM-DD HH:MM:SS"` (UTC, no `Z`). All client parses of
@@ -102,6 +112,18 @@ These are enforced in code (one place each) and tested:
     no-range reconnect) each fire their own fetch. Collapsing them to
     one promise would leak the first caller's opts and drop the others'
     data on the floor.
+11. **`hydrateFromServer` resolves with the row count** (not `void`).
+    Hooks use this to decide `hasMore` — a full page (`count >= PAGE_SIZE`)
+    means older rows may still be on the server. Returning `void` or
+    hardcoding `setHasMore(false)` kills the Sidebar's "Load more"
+    pagination silently — users see only the newest 20 in range.
+12. **Pre-2026-04-15 rows have no top-level `prompt`** — the ViewComfy
+    workflow-input format stored prompt text under keys like
+    `"39-inputs-text"`. `serverGenToEntry` falls back to
+    `extractLegacyPrompt` (first non-empty `"<node>-inputs-text"` value,
+    excluding `"-inputs-text_negative"`). Removing the fallback makes
+    every pre-feature entry render with an empty prompt and a Copy
+    button that copies "".
 
 ## Spec
 

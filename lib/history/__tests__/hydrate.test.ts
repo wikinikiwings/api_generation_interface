@@ -119,4 +119,41 @@ describe("hydrateFromServer", () => {
     await vi.runAllTimersAsync();
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it("resolves with the row count on success", async () => {
+    mockOk([
+      {
+        id: 42,
+        username: "alice",
+        workflow_name: "t",
+        prompt_data: "{}",
+        execution_time_seconds: 1,
+        created_at: new Date().toISOString(),
+        status: "completed",
+        outputs: [
+          {
+            id: 1,
+            generation_id: 42,
+            filename: "x.png",
+            filepath: "42424242-4242-4242-4242-424242424242.png",
+            content_type: "image/png",
+            size: 1,
+          },
+        ],
+      },
+    ]);
+    const p = hydrateFromServer({ username: "alice" });
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toBe(1);
+  });
+
+  it("resolves with 0 on HTTP error", async () => {
+    (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+      ok: false,
+      status: 500,
+    } as Response);
+    const p = hydrateFromServer({ username: "alice" });
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toBe(0);
+  });
 });

@@ -46,18 +46,26 @@ export function useHistoryEntries(opts: UseHistoryEntriesOpts): {
 
   React.useEffect(() => {
     if (!username) return;
+    // Cancellation guard: if range changes while a hydrate is in flight,
+    // the stale `.then` is skipped so it can't clobber fresh hasMore.
+    let cancelled = false;
     setIsLoading(true);
     offsetRef.current = 0;
-    void hydrateFromServer({ username, range }).finally(() => {
+    void hydrateFromServer({ username, range }).then((count) => {
+      if (cancelled) return;
       setIsLoading(false);
-      // hasMore is approximate; refined by loadMore based on returned page size.
-      setHasMore(false);
+      setHasMore(count >= PAGE_SIZE);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [username, rangeFromKey, rangeToKey, range]);
 
   const refetch = React.useCallback(() => {
     if (!username) return;
-    void hydrateFromServer({ username, range });
+    void hydrateFromServer({ username, range }).then((count) => {
+      setHasMore(count >= PAGE_SIZE);
+    });
   }, [username, range]);
 
   const loadMore = React.useCallback(() => {
@@ -68,7 +76,11 @@ export function useHistoryEntries(opts: UseHistoryEntriesOpts): {
       username,
       range,
       offset: offsetRef.current,
-    }).finally(() => setIsLoadingMore(false));
+    }).then((count) => {
+      setIsLoadingMore(false);
+      // If the server returned a full page, there may be older rows still.
+      setHasMore(count >= PAGE_SIZE);
+    });
   }, [username, range, isLoadingMore]);
 
   const entries = React.useMemo(() => {

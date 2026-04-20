@@ -141,6 +141,32 @@ describe("applyServerRow", () => {
     const entry = serverGenToEntry(row, "uuid-4");
     expect(entry.styleIds).toBeUndefined();
   });
+
+  it("recovers prompt from legacy <node>-inputs-text key when top-level prompt is absent", () => {
+    // Pre-2026-04-15 ViewComfy rows stored workflow inputs directly rather
+    // than a top-level "prompt" field. Real sample from production DB.
+    const row = mkRow({
+      prompt_data: JSON.stringify({
+        "39-inputs-text": "гладит кота на коленях",
+        "38-inputs-text_negative": "",
+        "38-inputs-style": "base",
+        "16-inputs-model": "gemini-flash",
+      }),
+    });
+    const entry = serverGenToEntry(row, "uuid-legacy-1");
+    expect(entry.prompt).toBe("гладит кота на коленях");
+  });
+
+  it("legacy prompt recovery ignores <node>-inputs-text_negative keys", () => {
+    const row = mkRow({
+      prompt_data: JSON.stringify({
+        "38-inputs-text_negative": "blurry, low quality",
+        "16-inputs-model": "gemini-flash",
+      }),
+    });
+    const entry = serverGenToEntry(row, "uuid-legacy-2");
+    expect(entry.prompt).toBe("");
+  });
 });
 
 describe("applyServerList cross-device delete", () => {
@@ -248,6 +274,58 @@ describe("applyServerList cross-device delete", () => {
       { offset: 20 }
     );
     const entry = useHistoryStore.getState().entries.find((e) => e.serverGenId === 100)!;
+    expect(entry.state).toBe("live");
+  });
+
+  it("U8b: entry outside caller's rangeTo (filter-narrowing) is preserved", () => {
+    // Repro for the filter-narrowing bug: user slides "До" backward, server
+    // returns only rows up to that date, and any store entry whose createdAt
+    // is above the caller's rangeTo must NOT be marked REMOVED — its
+    // absence from the response is explained by the filter, not by
+    // cross-device deletion. Without this guard, sliding "До" back then
+    // forward again leaves recent entries stuck in REMOVED (invariant 2
+    // blocks their resurrection) and the user sees nothing until a
+    // page reload.
+    applyServerRow(
+      mkRow({
+        id: 300,
+        created_at: "2026-04-20T10:00:00Z", // outside narrowed filter
+        outputs: [
+          {
+            id: 3,
+            generation_id: 300,
+            filename: "c.png",
+            filepath: "33333333-3333-3333-3333-333333333333.png",
+            content_type: "image/png",
+            size: 100,
+          },
+        ],
+      })
+    );
+    applyServerList(
+      [
+        mkRow({
+          id: 400,
+          created_at: "2026-04-15T11:00:00Z", // inside narrowed filter
+          outputs: [
+            {
+              id: 4,
+              generation_id: 400,
+              filename: "d.png",
+              filepath: "44444444-4444-4444-4444-444444444444.png",
+              content_type: "image/png",
+              size: 100,
+            },
+          ],
+        }),
+      ],
+      {
+        offset: 0,
+        // User narrowed "До" to 2026-04-15 (end-of-day UTC).
+        rangeTo: new Date("2026-04-15T23:59:59.999Z").getTime(),
+      }
+    );
+    const entry = useHistoryStore.getState().entries.find((e) => e.serverGenId === 300)!;
     expect(entry.state).toBe("live");
   });
 

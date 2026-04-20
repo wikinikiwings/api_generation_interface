@@ -110,20 +110,39 @@ function mergeKeepingBlobs(local: HistoryEntry, server: HistoryEntry): HistoryEn
   };
 }
 
+/**
+ * Pre-2026-04-15 rows stored raw ViewComfy workflow inputs keyed by
+ * "<node>-inputs-<field>" rather than a top-level "prompt". Recover the
+ * prompt text from the first non-empty "-inputs-text" value (excluding
+ * "-inputs-text_negative"), so legacy rows still show prompt + Copy work.
+ */
+function extractLegacyPrompt(parsed: Record<string, unknown>): string {
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!/-inputs-text$/.test(key)) continue;
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed.length > 0) return trimmed;
+  }
+  return "";
+}
+
 export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEntry {
   let prompt = "";
   let workflowName: string | undefined = row.workflow_name;
   let userPrompt: string | undefined;
   let styleIds: string[] | undefined;
   try {
-    const parsed = JSON.parse(row.prompt_data) as {
+    const parsed = JSON.parse(row.prompt_data) as Record<string, unknown> & {
       prompt?: string;
       workflow?: string;
       userPrompt?: string;
       styleId?: string;
       styleIds?: string[];
     };
-    prompt = parsed.prompt ?? "";
+    prompt =
+      typeof parsed.prompt === "string"
+        ? parsed.prompt
+        : extractLegacyPrompt(parsed);
     workflowName = parsed.workflow ?? row.workflow_name;
     if (typeof parsed.userPrompt === "string") userPrompt = parsed.userPrompt;
     if (
@@ -176,13 +195,25 @@ function inferOutputFormat(
 
 export interface ApplyListOpts {
   offset?: number;
+  /** ms epoch — upper/lower bounds of the filter the caller queried with.
+   *  When provided, entries outside [rangeFrom, rangeTo] are NOT candidates
+   *  for cross-device-delete marking, because their absence from the
+   *  response is explained by the filter, not by server-side deletion. */
+  rangeFrom?: number;
+  rangeTo?: number;
 }
 
 /**
  * Iterate rows through applyServerRow, then apply invariant 7:
  * a LIVE entry whose serverGenId is absent from the server response
- * is marked REMOVED — but only on the first page (offset=0) and only
- * within the response time window.
+ * is marked REMOVED — but only on the first page (offset=0), only
+ * at or above the response's oldest timestamp (pagination guard), and
+ * only within the caller's filter range when provided (filter guard).
+ *
+ * The filter guard is load-bearing: without it, a narrowed "До" returns
+ * rows only up to that date, recent-but-out-of-filter entries get
+ * marked REMOVED, and invariant 2 then blocks their resurrection on
+ * the next hydrate — so the user sees nothing until a page reload.
  */
 export function applyServerList(rows: ServerGeneration[], opts: ApplyListOpts): void {
   const incomingByGenId = new Map(rows.map((r) => [r.id, r]));
@@ -199,6 +230,8 @@ export function applyServerList(rows: ServerGeneration[], opts: ApplyListOpts): 
     if (typeof e.serverGenId !== "number") continue;
     if (incomingByGenId.has(e.serverGenId)) continue;
     if (e.createdAt < oldest) continue;
+    if (opts.rangeFrom != null && e.createdAt < opts.rangeFrom) continue;
+    if (opts.rangeTo != null && e.createdAt > opts.rangeTo) continue;
     toRemove.push(e.id);
     debugHistory("hydrate.cross-device-delete", {
       id: e.id,
