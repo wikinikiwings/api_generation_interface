@@ -126,6 +126,32 @@ export function renameForOptimized(
   return `${base}-opt.${newExt}`;
 }
 
+/** Aggregate decision: sum of current file sizes over the cap. */
+export function needsAggregatePass2(results: OptimizeFileResult[]): boolean {
+  const sum = results.reduce((acc, r) => acc + r.file.size, 0);
+  return sum > MAX_AGGREGATE_BYTES;
+}
+
+/** Pick the indices of pass-1 outputs worth re-running through a tighter
+ *  pass 2. Skips untouched files and alpha-PNGs under 4 MB (no meaningful
+ *  gain). Returns both the index list and the filtered result refs for
+ *  the caller's convenience. */
+export function collectPass2Candidates(
+  results: OptimizeFileResult[]
+): { indices: number[]; entries: OptimizeFileResult[] } {
+  const ALPHA_PNG_FLOOR = 4 * 1024 * 1024;
+  const indices: number[] = [];
+  const entries: OptimizeFileResult[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (!r.wasOptimized) continue;
+    if (r.hasAlpha && r.file.size <= ALPHA_PNG_FLOOR) continue;
+    indices.push(i);
+    entries.push(r);
+  }
+  return { indices, entries };
+}
+
 export async function optimizeForUpload(
   _files: File[],
   _options?: OptimizeOptions

@@ -100,3 +100,80 @@ describe("renameForOptimized", () => {
     expect(renameForOptimized("some.name.v2.png", "image/jpeg")).toBe("some.name.v2-opt.jpg");
   });
 });
+
+import {
+  needsAggregatePass2,
+  collectPass2Candidates,
+  MAX_AGGREGATE_BYTES,
+} from "@/lib/image-optimize";
+import type { OptimizeFileResult } from "@/lib/image-optimize";
+
+function mkResult(over: Partial<OptimizeFileResult>): OptimizeFileResult {
+  return {
+    file: new File([], "x"),
+    wasOptimized: false,
+    originalBytes: 0,
+    newBytes: 0,
+    originalDims: { width: 0, height: 0 },
+    newDims: { width: 0, height: 0 },
+    hasAlpha: false,
+    pass: 0,
+    ...over,
+  };
+}
+
+describe("needsAggregatePass2", () => {
+  it("returns false when sum is under cap", () => {
+    const rs = [
+      mkResult({ file: new File([new Uint8Array(10_000_000)], "a") }),
+      mkResult({ file: new File([new Uint8Array(10_000_000)], "b") }),
+    ];
+    expect(needsAggregatePass2(rs)).toBe(false);
+  });
+  it("returns true when sum exceeds MAX_AGGREGATE_BYTES", () => {
+    const big = new Uint8Array(MAX_AGGREGATE_BYTES + 1);
+    const rs = [mkResult({ file: new File([big], "big") })];
+    expect(needsAggregatePass2(rs)).toBe(true);
+  });
+});
+
+describe("collectPass2Candidates", () => {
+  it("excludes untouched files (wasOptimized=false)", () => {
+    const a = mkResult({ wasOptimized: false });
+    const b = mkResult({
+      wasOptimized: true,
+      hasAlpha: false,
+      file: new File([new Uint8Array(5_000_000)], "b"),
+    });
+    const { indices } = collectPass2Candidates([a, b]);
+    expect(indices).toEqual([1]);
+  });
+  it("excludes alpha-PNGs below 4 MB", () => {
+    const small = mkResult({
+      wasOptimized: true,
+      hasAlpha: true,
+      file: new File([new Uint8Array(3_000_000)], "small"),
+    });
+    const big = mkResult({
+      wasOptimized: true,
+      hasAlpha: true,
+      file: new File([new Uint8Array(6_000_000)], "big"),
+    });
+    const { indices } = collectPass2Candidates([small, big]);
+    expect(indices).toEqual([1]);
+  });
+  it("includes all sized JPEG-output entries", () => {
+    const a = mkResult({
+      wasOptimized: true,
+      hasAlpha: false,
+      file: new File([new Uint8Array(100_000)], "a"),
+    });
+    const b = mkResult({
+      wasOptimized: true,
+      hasAlpha: false,
+      file: new File([new Uint8Array(8_000_000)], "b"),
+    });
+    const { indices } = collectPass2Candidates([a, b]);
+    expect(indices).toEqual([0, 1]);
+  });
+});
