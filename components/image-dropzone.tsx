@@ -4,6 +4,11 @@ import * as React from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn, fileToDataURL } from "@/lib/utils";
+import {
+  optimizeForUpload,
+  buildSuccessMessage,
+  plural,
+} from "@/lib/image-optimize";
 import { Button } from "@/components/ui/button";
 
 export interface DroppedImage {
@@ -63,37 +68,115 @@ export function ImageDropzone({
     valueRef.current = value;
   }, [value]);
 
+  const buildId = React.useCallback(
+    (file: File) =>
+      `${file.name}-${file.size}-${file.lastModified}-${Math.random()
+        .toString(36)
+        .slice(2, 6)}`,
+    []
+  );
+
   const handleFiles = React.useCallback(
-    async (files: FileList | File[]) => {
-      const arr = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    async (filesArg: FileList | File[]) => {
+      const arr = Array.from(filesArg).filter((f) => f.type.startsWith("image/"));
       if (arr.length === 0) return;
 
       const current = valueRef.current;
       const room = maxImages - current.length;
-      const toAdd = arr.slice(0, room);
-      const next: DroppedImage[] = [];
-      for (const file of toAdd) {
-        try {
-          const dataUrl = await fileToDataURL(file);
-          const dims = await readImageDimensions(dataUrl);
-          next.push({
-            id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()
-              .toString(36)
-              .slice(2, 6)}`,
-            file,
+      const toProcess = arr.slice(0, room);
+      if (toProcess.length === 0) {
+        toast.error(`Лимит ${maxImages} изображений достигнут`);
+        return;
+      }
+
+      // 1. Insert blob-URL placeholders into value immediately.
+      const placeholders: DroppedImage[] = toProcess.map((f) => ({
+        id: buildId(f),
+        file: f,
+        dataUrl: URL.createObjectURL(f),
+        width: 0,
+        height: 0,
+        status: "processing" as const,
+      }));
+      const placeholderIds = placeholders.map((p) => p.id);
+      onChange([...valueRef.current, ...placeholders]);
+
+      // Yield one frame so React commits the placeholder insert and the
+      // valueRef useEffect updates. Otherwise a super-fast worker
+      // completion could read a stale ref and drop the placeholder.
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve())
+      );
+
+      // 2. Kick off optimization with per-file replacement callback.
+      const promise = optimizeForUpload(toProcess, {
+        onFileComplete: async (index, result) => {
+          const id = placeholderIds[index];
+          const previous = valueRef.current.find((e) => e.id === id);
+          // Previous entry's dataUrl is a blob URL OR the pass-1 data URL
+          // (if pass 2 fires for the same slot). Revoke only blob URLs.
+          if (previous && previous.dataUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(previous.dataUrl);
+          }
+
+          let dataUrl = "";
+          let dims = { width: 0, height: 0 };
+          try {
+            dataUrl = await fileToDataURL(result.file);
+            dims = await readImageDimensions(dataUrl);
+          } catch (err) {
+            console.error("Failed to finalize optimized file", result.file.name, err);
+            // Fall through with empty dataUrl — tile will break but other
+            // files proceed. The top-level catch below still reports.
+          }
+
+          const ready: DroppedImage = {
+            id,
+            file: result.file,
             dataUrl,
             width: dims.width,
             height: dims.height,
-          });
-        } catch (err) {
-          console.error("Failed to read file", file.name, err);
-        }
+            status: "ready",
+          };
+          // Replace by id; if the placeholder was removed, map is a no-op.
+          onChange(valueRef.current.map((e) => (e.id === id ? ready : e)));
+        },
+      });
+
+      // 3. Single summary toast for the whole batch.
+      await toast.promise(promise, {
+        loading: `Обрабатываю ${toProcess.length} ${plural(toProcess.length)}...`,
+        success: (r) => buildSuccessMessage(r, toProcess.length),
+        error: "Не удалось обработать изображения",
+      });
+
+      const result = await promise;
+
+      // 4. Side-effect toasts + cleanup of errored placeholders.
+      if (result.aggregatePass2Triggered) {
+        toast.warning(
+          "Суммарный размер превысил лимит — сжатие усилено"
+        );
       }
-      // Read the ref AGAIN after the async dataUrl conversions — a
-      // parallel ingestion may have updated it while we were awaiting.
-      onChange([...valueRef.current, ...next]);
+      if (result.errors.length > 0) {
+        toast.error(
+          result.errors.length === 1
+            ? "1 файл не удалось прочитать"
+            : `${result.errors.length} файл(ов) не удалось прочитать`
+        );
+        const erroredIds = new Set<string>();
+        result.errors.forEach((e) => {
+          const idx = toProcess.findIndex((f) => f.name === e.fileName);
+          if (idx >= 0) erroredIds.add(placeholderIds[idx]);
+        });
+        // Revoke blob URLs of errored placeholders before removing.
+        valueRef.current
+          .filter((e) => erroredIds.has(e.id) && e.dataUrl.startsWith("blob:"))
+          .forEach((e) => URL.revokeObjectURL(e.dataUrl));
+        onChange(valueRef.current.filter((e) => !erroredIds.has(e.id)));
+      }
     },
-    [onChange, maxImages]
+    [onChange, maxImages, buildId]
   );
 
   // Keep the latest handleFiles + remaining in a ref so the global paste
