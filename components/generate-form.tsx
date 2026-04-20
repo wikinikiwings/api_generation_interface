@@ -406,6 +406,15 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       }
     }
 
+    // Block submit while any dropped image is still being optimized. The
+    // placeholder spinner UI tells the user what's happening; this prevents
+    // the submit from racing with the worker pool and shipping a File that
+    // was about to be replaced.
+    if (images.some((img) => img.status === "processing")) {
+      toast.info("Дождитесь оптимизации изображений");
+      return;
+    }
+
     if (!prompt.trim()) {
       toast.error("Введи промпт");
       return;
