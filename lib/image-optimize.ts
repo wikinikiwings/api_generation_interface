@@ -176,6 +176,208 @@ export function buildSuccessMessage(
   return `Оптимизировано: ${optimized.length} из ${totalCount}`;
 }
 
+// ── Canvas-backed implementation ──────────────────────────────────────
+
+interface OptimizeConfig {
+  maxLongSide: number;
+  jpegQuality: number;
+}
+
+const PASS1_CONFIG: OptimizeConfig = {
+  maxLongSide: MAX_LONG_SIDE,
+  jpegQuality: JPEG_QUALITY_PASS1,
+};
+
+const PASS2_CONFIG: OptimizeConfig = {
+  maxLongSide: MAX_LONG_SIDE_PASS2,
+  jpegQuality: JPEG_QUALITY_PASS2,
+};
+
+/** Returns true if the browser supports the fast path. */
+function hasOffscreenStack(): boolean {
+  return (
+    typeof OffscreenCanvas !== "undefined" &&
+    typeof createImageBitmap !== "undefined"
+  );
+}
+
+/** Decode a File to an ImageBitmap via createImageBitmap (fast path)
+ *  OR via HTMLImageElement + object URL (fallback). */
+async function decodeFile(file: File): Promise<{
+  width: number;
+  height: number;
+  drawInto: (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, w: number, h: number) => void;
+  close: () => void;
+}> {
+  if (hasOffscreenStack()) {
+    const bitmap = await createImageBitmap(file);
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      drawInto: (ctx, w, h) => ctx.drawImage(bitmap, 0, 0, w, h),
+      close: () => bitmap.close(),
+    };
+  }
+  // Fallback: load via Image + object URL.
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Image decode failed"));
+      el.src = url;
+    });
+    return {
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+      drawInto: (ctx, w, h) => ctx.drawImage(img, 0, 0, w, h),
+      close: () => URL.revokeObjectURL(url),
+    };
+  } catch (e) {
+    URL.revokeObjectURL(url);
+    throw e;
+  }
+}
+
+/** Cheap alpha sampling: draw the image into a 64×64 canvas and scan
+ *  for any pixel with alpha < 255. Called only for MIME types that can
+ *  carry alpha (png/webp/gif). */
+async function sampleAlpha(decoded: {
+  drawInto: (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, w: number, h: number) => void;
+}): Promise<boolean> {
+  const W = 64;
+  const H = 64;
+  if (hasOffscreenStack()) {
+    const c = new OffscreenCanvas(W, H);
+    const ctx = c.getContext("2d");
+    if (!ctx) return true; // conservative
+    decoded.drawInto(ctx, W, H);
+    const data = ctx.getImageData(0, 0, W, H).data;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] < 255) return true;
+    }
+    return false;
+  }
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext("2d");
+  if (!ctx) return true;
+  decoded.drawInto(ctx, W, H);
+  const data = ctx.getImageData(0, 0, W, H).data;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) return true;
+  }
+  return false;
+}
+
+/** Encode a decoded image to a Blob at `targetW × targetH` using
+ *  `outputType` + `quality`. */
+async function encodeToBlob(
+  decoded: Pick<Awaited<ReturnType<typeof decodeFile>>, "drawInto">,
+  targetW: number,
+  targetH: number,
+  outputType: string,
+  quality: number
+): Promise<Blob> {
+  if (hasOffscreenStack()) {
+    const c = new OffscreenCanvas(targetW, targetH);
+    const ctx = c.getContext("2d");
+    if (!ctx) throw new Error("2d context unavailable");
+    decoded.drawInto(ctx, targetW, targetH);
+    return c.convertToBlob({ type: outputType, quality });
+  }
+  const c = document.createElement("canvas");
+  c.width = targetW;
+  c.height = targetH;
+  const ctx = c.getContext("2d");
+  if (!ctx) throw new Error("2d context unavailable");
+  decoded.drawInto(ctx, targetW, targetH);
+  return new Promise<Blob>((resolve, reject) => {
+    c.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("toBlob returned null"))),
+      outputType,
+      quality
+    );
+  });
+}
+
+/** Optimize a single file with the given config. The caller decides
+ *  whether optimization is warranted; this function still checks and
+ *  will return `wasOptimized=false` (with the original `file`) if
+ *  triggers don't apply under THIS config. */
+export async function optimizeOneFile(
+  file: File,
+  config: OptimizeConfig = PASS1_CONFIG
+): Promise<OptimizeFileResult> {
+  const decoded = await decodeFile(file);
+  try {
+    const origDims = { width: decoded.width, height: decoded.height };
+
+    const triggers = needsOptimizeByTriggers(file.size, decoded.width, decoded.height);
+    // A pass-2 call may be over a file that's under the pass-1 triggers
+    // (e.g. the JPEG output of pass 1). We still run a resize if the
+    // pass-2 cap is smaller than current dims.
+    const pixelTrigger =
+      Math.max(decoded.width, decoded.height) > config.maxLongSide;
+    const byteTrigger = file.size > MAX_FILE_BYTES;
+    const willWork = triggers || pixelTrigger;
+
+    if (!willWork && !byteTrigger) {
+      return {
+        file,
+        wasOptimized: false,
+        originalBytes: file.size,
+        newBytes: file.size,
+        originalDims: origDims,
+        newDims: origDims,
+        hasAlpha: false,
+        pass: 0,
+      };
+    }
+
+    // Alpha detection only for MIME types that can carry it.
+    let hasAlpha = false;
+    if (file.type === "image/png" || file.type === "image/webp") {
+      hasAlpha = await sampleAlpha(decoded);
+    } else if (file.type === "image/gif") {
+      hasAlpha = true;
+    }
+
+    const target = computeTargetDims(
+      decoded.width,
+      decoded.height,
+      config.maxLongSide
+    );
+    const outputType = hasAlpha ? "image/png" : "image/jpeg";
+    const blob = await encodeToBlob(
+      decoded,
+      target.width,
+      target.height,
+      outputType,
+      config.jpegQuality
+    );
+    const newName = renameForOptimized(file.name, outputType);
+    const newFile = new File([blob], newName, {
+      type: outputType,
+      lastModified: file.lastModified,
+    });
+
+    return {
+      file: newFile,
+      wasOptimized: true,
+      originalBytes: file.size,
+      newBytes: newFile.size,
+      originalDims: origDims,
+      newDims: target,
+      hasAlpha,
+      pass: 1,
+    };
+  } finally {
+    decoded.close();
+  }
+}
+
 export async function optimizeForUpload(
   _files: File[],
   _options?: OptimizeOptions
