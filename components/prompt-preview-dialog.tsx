@@ -153,9 +153,9 @@ export function PromptPreviewDialog({
   const colorIndexById = React.useMemo(
     () =>
       new Map(
-        activeStyles.map((s, i) => [s.id, i % STYLE_COLORS.length])
+        styles.map((s, i) => [s.id, i % STYLE_COLORS.length])
       ),
-    [activeStyles]
+    [styles]
   );
 
   const untickedByZone = React.useMemo(() => {
@@ -358,7 +358,7 @@ export function PromptPreviewDialog({
                 }
 
                 const color =
-                  STYLE_COLORS[blk.colorIndex! % STYLE_COLORS.length];
+                  STYLE_COLORS[colorIndexById.get(blk.styleId!) ?? 0];
                 const indentPx = Math.min(blk.depth, MAX_INDENT_DEPTH) * INDENT_PX_PER_LEVEL;
                 return (
                   <div

@@ -358,3 +358,31 @@ relax the assertion to `toMatchObject`. Flag it in the plan.
 - `components/__tests__/prompt-preview-dialog-merge.test.ts`.
 - Admin UI, store, history, composeFinalPrompt output.
 - `STYLE_COLORS` palette itself (same six entries).
+
+## Follow-up: colour by identity (2026-04-20)
+
+Decision #6 above was reversed after ship. Colour is now keyed by the
+style's position in the full admin `styles` list (identity), not by
+the position in `activeStyles` (slot). Motivation: during drag-reorder,
+the user wanted to *see* blocks swap — position-keyed colour made the
+palette feel static while blocks moved through it. Identity-keyed
+colour makes the colours travel with the blocks.
+
+Change is dialog-local (`components/prompt-preview-dialog.tsx`):
+
+- `colorIndexById` is built from `styles` (admin order) instead of
+  `activeStyles`.
+- Right-column renderer reads colour via
+  `colorIndexById.get(blk.styleId!)` instead of `blk.colorIndex`.
+
+`buildPreviewBlocks` and its tests are untouched — `PreviewBlock.colorIndex`
+is still emitted by the pure helper (slot-based, as before) but is no
+longer consumed by the only production consumer. Leaving it avoids a
+test churn for what is a purely visual tweak; a future cleanup can
+remove it if/when a second consumer appears.
+
+Palette is still shared across zones. With >6 styles in the admin list
+colour collisions can occur — accepted, matches the prior collision
+behaviour for >6 *active* styles. `wrap`-zone styles keep the prefix
+and suffix blocks on the same colour (both indexed by the same
+`styleId`).
