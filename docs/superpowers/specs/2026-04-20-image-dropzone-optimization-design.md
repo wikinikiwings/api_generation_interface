@@ -348,3 +348,65 @@ After merge, verify in the dev environment:
 - `components/generate-form.tsx` — submit-handler guard against `status === "processing"`.
 
 Everything else stays as-is.
+
+---
+
+## Post-Ship (2026-04-20)
+
+Shipped on `main`. No feature branch — this repo's convention is direct commits. Validation gates at time of ship: vitest 150/150 green, `npx tsc --noEmit` clean, `npm run build` success.
+
+### Commit chain (chronological)
+
+| SHA | Commit |
+|---|---|
+| `6e7f20d` | feat(image-optimize): add module skeleton with types and thresholds |
+| `e751989` | feat(image-optimize): add runPool with bounded concurrency |
+| `1a8c81f` | feat(image-optimize): add pure threshold + rename helpers |
+| `97779a7` | feat(image-optimize): add aggregate pass-2 decision helpers |
+| `a7ec077` | feat(image-optimize): add toast summary + plural helpers |
+| `1ca1ed7` | feat(image-optimize): add optimizeOneFile (canvas + fallback) |
+| `0fc68c6` | refactor(image-optimize): remove redundant byteTrigger from optimizeOneFile |
+| `19e61bd` | feat(image-optimize): orchestrate pass 1 + pass 2 with concurrency |
+| `574fc2a` | feat(image-dropzone): add status field and placeholder tile render |
+| `00fd3e0` | feat(image-dropzone): route handleFiles through optimizeForUpload |
+| `e167a4e` | fix(image-dropzone): close valueRef race in handleFiles |
+| `d32bd51` | feat(image-dropzone): revoke blob URLs on unmount |
+| `80867b1` | feat(generate-form): block submit while images are optimizing |
+
+### Test coverage (automated)
+
+26 unit tests in `lib/image-optimize.test.ts`, all pure-helper-level — jsdom doesn't provide `OffscreenCanvas` / `createImageBitmap`, so the canvas pipeline is verified via manual smoke in the browser.
+
+### Post-ship corrections
+
+Two reviewer-flagged issues addressed during implementation, each shipped as its own commit:
+
+1. **`0fc68c6` — redundant `byteTrigger`.** In Task 6's `optimizeOneFile`, the early-exit guard `if (!willWork && !byteTrigger)` had a dead second clause because `triggers` already covered `bytes > MAX_FILE_BYTES`. Simplified to `if (!willWork)`. Behavior unchanged; clarity improved.
+
+2. **`e167a4e` — `valueRef` race in `handleFiles`.** The original `handleFiles` relied on `useEffect(() => { valueRef.current = value; }, [value])` to sync the ref after each `onChange`. Under `CONCURRENCY=4`, four async `onFileComplete` callbacks could overlap and read a stale ref, dropping or reverting updates (classic lost-update race). Fixed by updating `valueRef.current = next` **inline** right before every `onChange(next)` call inside `handleFiles`. The useEffect stays for parent-driven updates from outside the closure. The rAF yield is kept as a paint aid but is no longer load-bearing for correctness.
+
+### Manually verified scenarios (2026-04-20, dev browser)
+
+User-tested subset of the 8 planned smoke scenarios:
+- Small JPEG pass-through (scenario A).
+- Large PNG optimization with toast (scenario B).
+- Mixed batch with progressive spinner resolution (scenario C).
+- Submit-guard while processing (scenario E).
+- Ctrl+V paste flow (scenario F).
+- Drag-from-history flow (scenario G).
+- Corrupted-file rejection (scenario H).
+
+Scenario D (aggregate pass-2 with > 85 MB total) not tested — user didn't have enough source material to reproduce. The pass-2 pipeline is exercised by `needsAggregatePass2` / `collectPass2Candidates` unit tests (`97779a7`); the canvas round-trip within it follows the same code paths as pass 1, which IS verified manually.
+
+### Known follow-ups (not blocking)
+
+- **`aggregatePass2Triggered` semantics edge case.** The flag is set when the aggregate cap is exceeded regardless of whether `collectPass2Candidates` returned any candidates. If every optimized entry is a small alpha-PNG (all filtered out by the 4 MB floor), the warning toast fires but no files are actually re-encoded. Acceptable for now — the aggregate IS still over cap, so the user warning is honest — but a JSDoc note on the field would clarify the contract for future callers.
+- **Spinner overlay has no aria hint.** Screen readers don't announce "processing". Two-line fix: `role="status" aria-label="Обрабатывается"` on the overlay div. Accessibility pass, not blocking.
+- **HEIC/HEIF from iOS paste** fall into `errors[]`. Not a regression — current base64 path wouldn't decode them either — but a dedicated error message would be friendlier than the generic "не удалось прочитать".
+- **No in-flight cancel.** Removing a placeholder isn't currently possible (X hidden during processing). If the user drops a huge batch by mistake they must wait it out. Acceptable for now; a cancel button is a future UX improvement.
+
+### How to extend this module
+
+If a future task wants to push thresholds around (e.g., 8K allowed for a specific model), change the `MAX_LONG_SIDE` / `MAX_FILE_BYTES` constants at the top of `lib/image-optimize.ts` — all call sites read from these. If the per-model cap diverges, the cleanest path is to accept an override in `OptimizeOptions` rather than flipping module-level constants.
+
+If the orchestrator needs AbortSignal support: `runPool`'s worker signature is `(item, index) => Promise<R>`, so thread an external `AbortSignal` through the options object and have `optimizeOneFile` check `signal.aborted` after each `await`. The pool itself doesn't need to change.
