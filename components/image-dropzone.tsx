@@ -68,6 +68,20 @@ export function ImageDropzone({
     valueRef.current = value;
   }, [value]);
 
+  // On unmount, revoke any leftover blob URLs created for placeholders.
+  // Individual `onFileComplete` callbacks revoke on replacement, and the
+  // error path revokes on removal — this catches the edge case where the
+  // user navigates away mid-optimization.
+  React.useEffect(() => {
+    return () => {
+      for (const img of valueRef.current) {
+        if (img.dataUrl.startsWith("blob:")) {
+          URL.revokeObjectURL(img.dataUrl);
+        }
+      }
+    };
+  }, []);
+
   const buildId = React.useCallback(
     (file: File) =>
       `${file.name}-${file.size}-${file.lastModified}-${Math.random()
