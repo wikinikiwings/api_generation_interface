@@ -106,7 +106,7 @@ import {
   collectPass2Candidates,
   MAX_AGGREGATE_BYTES,
 } from "@/lib/image-optimize";
-import type { OptimizeFileResult } from "@/lib/image-optimize";
+import type { OptimizeFileResult, OptimizeResult } from "@/lib/image-optimize";
 
 function mkResult(over: Partial<OptimizeFileResult>): OptimizeFileResult {
   return {
@@ -175,5 +175,65 @@ describe("collectPass2Candidates", () => {
     });
     const { indices } = collectPass2Candidates([a, b]);
     expect(indices).toEqual([0, 1]);
+  });
+});
+
+import { buildSuccessMessage, plural } from "@/lib/image-optimize";
+
+describe("plural", () => {
+  it("returns the correct Russian form", () => {
+    expect(plural(1)).toBe("изображение");
+    expect(plural(2)).toBe("изображения");
+    expect(plural(3)).toBe("изображения");
+    expect(plural(4)).toBe("изображения");
+    expect(plural(5)).toBe("изображений");
+    expect(plural(11)).toBe("изображений");
+    expect(plural(21)).toBe("изображение");
+    expect(plural(22)).toBe("изображения");
+    expect(plural(25)).toBe("изображений");
+  });
+});
+
+describe("buildSuccessMessage", () => {
+  it("formats the no-optimization case", () => {
+    const r: OptimizeResult = {
+      files: [new File([], "a")],
+      results: [mkResult({})],
+      errors: [],
+      aggregatePass2Triggered: false,
+    };
+    expect(buildSuccessMessage(r, 3)).toBe("Добавлено: 3");
+  });
+
+  it("formats the single-optimization-in-small-batch case with dims", () => {
+    const r: OptimizeResult = {
+      files: [new File([], "a"), new File([], "b")],
+      results: [
+        mkResult({ wasOptimized: false }),
+        mkResult({
+          wasOptimized: true,
+          originalDims: { width: 8000, height: 6000 },
+          newDims: { width: 4096, height: 3072 },
+        }),
+      ],
+      errors: [],
+      aggregatePass2Triggered: false,
+    };
+    expect(buildSuccessMessage(r, 2)).toBe(
+      "1 из 2 оптимизирована: 8000×6000 → 4096×3072"
+    );
+  });
+
+  it("formats the many-optimized case", () => {
+    const results = Array.from({ length: 10 }, () =>
+      mkResult({ wasOptimized: true })
+    );
+    const r: OptimizeResult = {
+      files: results.map((x) => x.file),
+      results,
+      errors: [],
+      aggregatePass2Triggered: false,
+    };
+    expect(buildSuccessMessage(r, 10)).toBe("Оптимизировано: 10 из 10");
   });
 });

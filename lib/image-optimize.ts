@@ -152,6 +152,30 @@ export function collectPass2Candidates(
   return { indices, entries };
 }
 
+/** Russian plural of "изображение" based on cardinal `n`. */
+export function plural(n: number): "изображение" | "изображения" | "изображений" {
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 14) return "изображений";
+  if (mod10 === 1) return "изображение";
+  if (mod10 >= 2 && mod10 <= 4) return "изображения";
+  return "изображений";
+}
+
+/** Build the success-toast text from an optimize result. See spec. */
+export function buildSuccessMessage(
+  result: OptimizeResult,
+  totalCount: number
+): string {
+  const optimized = result.results.filter((r) => r.wasOptimized);
+  if (optimized.length === 0) return `Добавлено: ${totalCount}`;
+  if (optimized.length === 1 && totalCount <= 2) {
+    const r = optimized[0];
+    return `1 из ${totalCount} оптимизирована: ${r.originalDims.width}×${r.originalDims.height} → ${r.newDims.width}×${r.newDims.height}`;
+  }
+  return `Оптимизировано: ${optimized.length} из ${totalCount}`;
+}
+
 export async function optimizeForUpload(
   _files: File[],
   _options?: OptimizeOptions
