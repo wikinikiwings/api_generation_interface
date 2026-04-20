@@ -320,10 +320,9 @@ export async function optimizeOneFile(
     // pass-2 cap is smaller than current dims.
     const pixelTrigger =
       Math.max(decoded.width, decoded.height) > config.maxLongSide;
-    const byteTrigger = file.size > MAX_FILE_BYTES;
     const willWork = triggers || pixelTrigger;
 
-    if (!willWork && !byteTrigger) {
+    if (!willWork) {
       return {
         file,
         wasOptimized: false,
