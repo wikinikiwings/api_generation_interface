@@ -80,6 +80,52 @@ export async function runPool<T, R>(
   return results;
 }
 
+/** True if either the pixel cap or the byte cap is exceeded (strict >). */
+export function needsOptimizeByTriggers(
+  bytes: number,
+  width: number,
+  height: number
+): boolean {
+  const longSide = Math.max(width, height);
+  return longSide > MAX_LONG_SIDE || bytes > MAX_FILE_BYTES;
+}
+
+/** Compute new dimensions that cap the long side at `longSideCap`,
+ *  preserving aspect ratio. Returns integer pixels. Original dims
+ *  are returned unchanged when already under the cap. */
+export function computeTargetDims(
+  width: number,
+  height: number,
+  longSideCap: number
+): { width: number; height: number } {
+  const longSide = Math.max(width, height);
+  if (longSide <= longSideCap) return { width, height };
+  const scale = longSideCap / longSide;
+  return {
+    width: Math.round(width * scale),
+    height: Math.round(height * scale),
+  };
+}
+
+/** Rename a file by appending `-opt` before the extension, switching
+ *  extension if the output MIME differs from the input extension. */
+export function renameForOptimized(
+  originalName: string,
+  outputType: string
+): string {
+  const dot = originalName.lastIndexOf(".");
+  const base = dot >= 0 ? originalName.slice(0, dot) : originalName;
+  const newExt =
+    outputType === "image/jpeg"
+      ? "jpg"
+      : outputType === "image/png"
+      ? "png"
+      : outputType === "image/webp"
+      ? "webp"
+      : "bin";
+  return `${base}-opt.${newExt}`;
+}
+
 export async function optimizeForUpload(
   _files: File[],
   _options?: OptimizeOptions
