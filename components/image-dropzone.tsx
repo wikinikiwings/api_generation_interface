@@ -99,11 +99,14 @@ export function ImageDropzone({
         status: "processing" as const,
       }));
       const placeholderIds = placeholders.map((p) => p.id);
-      onChange([...valueRef.current, ...placeholders]);
+      const nextValuePlaceholders = [...valueRef.current, ...placeholders];
+      valueRef.current = nextValuePlaceholders;
+      onChange(nextValuePlaceholders);
 
-      // Yield one frame so React commits the placeholder insert and the
-      // valueRef useEffect updates. Otherwise a super-fast worker
-      // completion could read a stale ref and drop the placeholder.
+      // Yield one frame. The inline valueRef update below closes the race
+      // against fast onFileComplete callbacks, but this rAF still lets the
+      // browser paint the placeholder spinners before heavy optimize work
+      // starts.
       await new Promise<void>((resolve) =>
         requestAnimationFrame(() => resolve())
       );
@@ -139,7 +142,9 @@ export function ImageDropzone({
             status: "ready",
           };
           // Replace by id; if the placeholder was removed, map is a no-op.
-          onChange(valueRef.current.map((e) => (e.id === id ? ready : e)));
+          const nextValueReady = valueRef.current.map((e) => (e.id === id ? ready : e));
+          valueRef.current = nextValueReady;
+          onChange(nextValueReady);
         },
       });
 
@@ -173,7 +178,9 @@ export function ImageDropzone({
         valueRef.current
           .filter((e) => erroredIds.has(e.id) && e.dataUrl.startsWith("blob:"))
           .forEach((e) => URL.revokeObjectURL(e.dataUrl));
-        onChange(valueRef.current.filter((e) => !erroredIds.has(e.id)));
+        const nextValueFiltered = valueRef.current.filter((e) => !erroredIds.has(e.id));
+        valueRef.current = nextValueFiltered;
+        onChange(nextValueFiltered);
       }
     },
     [onChange, maxImages, buildId]
