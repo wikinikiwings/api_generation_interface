@@ -378,9 +378,89 @@ export async function optimizeOneFile(
 }
 
 export async function optimizeForUpload(
-  _files: File[],
-  _options?: OptimizeOptions
+  files: File[],
+  options?: OptimizeOptions
 ): Promise<OptimizeResult> {
-  // Implementation built up across tasks 2-7.
-  throw new Error("not implemented");
+  const errors: OptimizeError[] = [];
+  // Sparse results aligned with input indices. `undefined` slots mean
+  // the file errored and must be filtered out at the end.
+  const results: (OptimizeFileResult | undefined)[] = new Array(files.length);
+
+  // ── Pass 1 ────────────────────────────────────────────────────────
+  await runPool(files, CONCURRENCY, async (file, i) => {
+    try {
+      const r = await optimizeOneFile(file, PASS1_CONFIG);
+      results[i] = r;
+      options?.onFileComplete?.(i, r);
+    } catch (e) {
+      errors.push({
+        fileName: file.name,
+        reason: e instanceof Error ? e.message : String(e),
+      });
+    }
+  });
+
+  // Compact results (skip errored slots for subsequent steps).
+  const presentResults: OptimizeFileResult[] = [];
+  const presentIndices: number[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    if (r) {
+      presentResults.push(r);
+      presentIndices.push(i);
+    }
+  }
+
+  // ── Pass 2 ────────────────────────────────────────────────────────
+  let aggregatePass2Triggered = false;
+  if (needsAggregatePass2(presentResults)) {
+    aggregatePass2Triggered = true;
+    const { indices: subIdx, entries } = collectPass2Candidates(presentResults);
+    await runPool(entries, CONCURRENCY, async (entry, k) => {
+      try {
+        const r = await optimizeOneFile(entry.file, PASS2_CONFIG);
+        // Mark the pass field as 2 so consumers can distinguish. If pass 2
+        // didn't actually change anything (already under pass-2 triggers),
+        // still mark pass=2 when wasOptimized was true originally.
+        const merged: OptimizeFileResult = {
+          ...r,
+          // Preserve the original-source metadata from pass 1, not the
+          // re-decoded pass-1-output as "original".
+          originalBytes: entry.originalBytes,
+          originalDims: entry.originalDims,
+          wasOptimized: true,
+          pass: 2,
+        };
+        // Index within presentResults → original index within files.
+        const presentPos = subIdx[k];
+        presentResults[presentPos] = merged;
+        const originalIndex = presentIndices[presentPos];
+        results[originalIndex] = merged;
+        options?.onFileComplete?.(originalIndex, merged);
+      } catch (e) {
+        // A pass-2 failure leaves the pass-1 result in place. Record
+        // the error so the caller can surface it if desired.
+        errors.push({
+          fileName: entry.file.name,
+          reason: e instanceof Error ? e.message : String(e),
+        });
+      }
+    });
+  }
+
+  const finalFiles: File[] = [];
+  const finalResults: OptimizeFileResult[] = [];
+  for (const r of results) {
+    if (r) {
+      finalFiles.push(r.file);
+      finalResults.push(r);
+    }
+  }
+
+  return {
+    files: finalFiles,
+    results: finalResults,
+    errors,
+    aggregatePass2Triggered,
+  };
 }
