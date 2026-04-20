@@ -138,6 +138,7 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
               <input
                 type="date"
                 value={toDateInput(dateRange.from)}
+                max={toDateInput(dateRange.to)}
                 onChange={(e) =>
                   setDateRange((r) => ({ ...r, from: new Date(e.target.value) }))
                 }
@@ -149,6 +150,7 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
               <input
                 type="date"
                 value={toDateInput(dateRange.to)}
+                min={toDateInput(dateRange.from)}
                 onChange={(e) =>
                   setDateRange((r) => ({ ...r, to: new Date(e.target.value) }))
                 }
