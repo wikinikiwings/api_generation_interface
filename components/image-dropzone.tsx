@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Plus, X } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn, fileToDataURL } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,11 @@ export interface DroppedImage {
    *  models infer this server-side, but seedream needs an explicit size. */
   width: number;
   height: number;
+  /** Absent = "ready". While "processing", `dataUrl` is a blob URL of
+   *  the pre-optimization original and the tile shows a spinner
+   *  overlay. The `×` and drag handlers are skipped for processing
+   *  entries to avoid racing with the worker pool. */
+  status?: "processing" | "ready";
 }
 
 /** Read natural width/height from a base64 data URL. Returns 0,0 on failure. */
@@ -269,76 +274,84 @@ export function ImageDropzone({
       )}
     >
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-        {value.map((img, idx) => (
-          <div
-            key={img.id}
-            draggable
-            onDragStart={(e) => {
-              setDraggedId(img.id);
-              e.dataTransfer.effectAllowed = "move";
-              // Some browsers require data to be set for drag to start.
-              e.dataTransfer.setData("text/plain", img.id);
-            }}
-            onDragEnd={() => {
-              setDraggedId(null);
-              setDragOverId(null);
-            }}
-            onDragOver={(e) => {
-              // Only react to internal tile drags, not file-from-OS drags.
-              if (!draggedId) return;
-              e.preventDefault();
-              e.stopPropagation();
-              e.dataTransfer.dropEffect = "move";
-              if (dragOverId !== img.id) setDragOverId(img.id);
-            }}
-            onDragLeave={(e) => {
-              if (!draggedId) return;
-              e.stopPropagation();
-              if (dragOverId === img.id) setDragOverId(null);
-            }}
-            onDrop={(e) => {
-              if (!draggedId) return;
-              e.preventDefault();
-              // Block bubbling so the outer file-drop zone doesn't try to
-              // ingest this as a new upload.
-              e.stopPropagation();
-              reorder(draggedId, img.id);
-              setDraggedId(null);
-              setDragOverId(null);
-            }}
-            className={cn(
-              "group relative aspect-square cursor-grab overflow-hidden rounded-md border border-border bg-background p-1 transition-all active:cursor-grabbing",
-              draggedId === img.id && "opacity-40",
-              dragOverId === img.id &&
-                draggedId !== img.id &&
-                "ring-2 ring-primary ring-offset-1 ring-offset-background"
-            )}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={img.dataUrl}
-              alt={img.file.name}
-              draggable={false}
-              className="h-full w-full select-none object-contain"
-            />
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5">
-              <span className="text-[10px] text-white">#{idx + 1}</span>
-            </div>
-            <Button
-              type="button"
-              variant="destructive"
-              size="icon"
-              className="absolute right-1 top-1 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRemove(img.id);
+        {value.map((img, idx) => {
+          const isProcessing = img.status === "processing";
+          return (
+            <div
+              key={img.id}
+              draggable={!isProcessing}
+              onDragStart={(e) => {
+                if (isProcessing) return;
+                setDraggedId(img.id);
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", img.id);
               }}
-              aria-label="Remove image"
+              onDragEnd={() => {
+                setDraggedId(null);
+                setDragOverId(null);
+              }}
+              onDragOver={(e) => {
+                if (!draggedId || isProcessing) return;
+                e.preventDefault();
+                e.stopPropagation();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverId !== img.id) setDragOverId(img.id);
+              }}
+              onDragLeave={(e) => {
+                if (!draggedId) return;
+                e.stopPropagation();
+                if (dragOverId === img.id) setDragOverId(null);
+              }}
+              onDrop={(e) => {
+                if (!draggedId || isProcessing) return;
+                e.preventDefault();
+                e.stopPropagation();
+                reorder(draggedId, img.id);
+                setDraggedId(null);
+                setDragOverId(null);
+              }}
+              className={cn(
+                "group relative aspect-square overflow-hidden rounded-md border border-border bg-background p-1 transition-all",
+                !isProcessing && "cursor-grab active:cursor-grabbing",
+                draggedId === img.id && "opacity-40",
+                dragOverId === img.id &&
+                  draggedId !== img.id &&
+                  "ring-2 ring-primary ring-offset-1 ring-offset-background"
+              )}
             >
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img.dataUrl}
+                alt={img.file.name}
+                draggable={false}
+                className="h-full w-full select-none object-contain"
+              />
+              {isProcessing && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-1.5">
+                <span className="text-[10px] text-white">#{idx + 1}</span>
+              </div>
+              {!isProcessing && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon"
+                  className="absolute right-1 top-1 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemove(img.id);
+                  }}
+                  aria-label="Remove image"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          );
+        })}
         {remaining > 0 && (
           <div
             className={cn(
