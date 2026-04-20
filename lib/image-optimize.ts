@@ -54,6 +54,32 @@ export interface OptimizeOptions {
   onFileComplete?: (index: number, result: OptimizeFileResult) => void;
 }
 
+/**
+ * Runs `worker` over `items` with at most `concurrency` in flight
+ * simultaneously. Returns results in input order. A rejection from
+ * any worker aborts by rejecting the returned Promise.
+ */
+export async function runPool<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const runners = Array.from(
+    { length: Math.min(concurrency, items.length) },
+    async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) return;
+        results[i] = await worker(items[i], i);
+      }
+    }
+  );
+  await Promise.all(runners);
+  return results;
+}
+
 export async function optimizeForUpload(
   _files: File[],
   _options?: OptimizeOptions
