@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
 const PUBLIC_PATH_PREFIXES = ["/api/auth/", "/_next/", "/favicon"];
-const PUBLIC_EXACT = new Set(["/login"]);
+// Read-only public endpoints called from app/providers.tsx hydration on every
+// page mount, including /login (anonymous). Each route's own JSDoc declares
+// itself as a public read; mutation endpoints under /api/admin/* stay gated.
+const PUBLIC_EXACT = new Set(["/login", "/api/settings"]);
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_EXACT.has(pathname)) return true;
