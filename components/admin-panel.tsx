@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useSettingsStore } from "@/stores/settings-store";
 import { StylesSection } from "@/components/admin/styles-section";
+import { UsersTab } from "@/components/admin/users-tab";
 import type { ProviderId } from "@/lib/providers/types";
 import type { ProviderMeta } from "@/lib/providers/registry";
 
@@ -38,6 +39,7 @@ export function AdminPanel() {
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [loggingOut, setLoggingOut] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<"settings" | "styles" | "users">("settings");
 
   // Fetch provider metadata on mount
   React.useEffect(() => {
@@ -78,7 +80,7 @@ export function AdminPanel() {
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
-      await fetch("/api/admin/logout", { method: "POST" });
+      await fetch("/api/auth/logout", { method: "POST" });
       // Full page navigation so cookies are re-read and middleware
       // re-evaluates access on the next request.
       window.location.href = "/";
@@ -89,41 +91,8 @@ export function AdminPanel() {
     }
   };
 
-  return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 p-6 md:p-10">
-      {/* Header */}
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Админка</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Настройки провайдеров и приложения
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            href="/"
-            className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            К студии
-          </Link>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleLogout}
-            disabled={loggingOut}
-          >
-            {loggingOut ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <LogOut className="h-4 w-4" />
-            )}
-            Выйти
-          </Button>
-        </div>
-      </header>
-
-      {/* Active provider selection */}
+  function SettingsContent() {
+    return (
       <section className="rounded-xl border border-border bg-background shadow-sm">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold">Активный провайдер</h2>
@@ -219,9 +188,71 @@ export function AdminPanel() {
           )}
         </div>
       </section>
+    );
+  }
 
-      {/* Prompt styles */}
-      <StylesSection />
+  const tabs: { key: "settings" | "styles" | "users"; label: string }[] = [
+    { key: "settings", label: "Settings" },
+    { key: "styles", label: "Styles" },
+    { key: "users", label: "Users" },
+  ];
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 p-6 md:p-10">
+      {/* Header */}
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Админка</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Настройки провайдеров и приложения
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link
+            href="/"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            К студии
+          </Link>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            disabled={loggingOut}
+          >
+            {loggingOut ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <LogOut className="h-4 w-4" />
+            )}
+            Выйти
+          </Button>
+        </div>
+      </header>
+
+      {/* Tab strip */}
+      <div className="flex gap-1 border-b border-border">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+              activeTab === tab.key
+                ? "bg-primary/10 text-primary border-b-2 border-primary"
+                : "text-muted-foreground hover:bg-muted/60"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      {activeTab === "settings" && <SettingsContent />}
+      {activeTab === "styles" && <StylesSection />}
+      {activeTab === "users" && <UsersTab />}
     </div>
   );
 }
