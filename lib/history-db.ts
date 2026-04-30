@@ -39,7 +39,7 @@ if (!fs.existsSync(HISTORY_IMAGES_DIR))
 
 let _db: Database.Database | null = null;
 
-function getDb(): Database.Database {
+export function getDb(): Database.Database {
   if (!_db) {
     _db = new Database(DB_PATH);
     initSchema(_db);
