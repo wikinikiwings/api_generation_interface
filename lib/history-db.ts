@@ -11,6 +11,20 @@ import fs from "node:fs";
  *   - container    → /data (set via docker-compose volume mount)
  */
 
+/**
+ * WARNING: MIGRATION IN PROGRESS (Google OAuth, branch `auth/google-oauth`)
+ *
+ * Tasks 7.1–7.6 will rewrite the per-user CRUD functions below
+ * (saveGeneration, getGenerations, getGenerationById, deleteGeneration,
+ * getUserSelectedModel, setUserSelectedModel) to use `user_id INTEGER`
+ * instead of `username TEXT`. Until those tasks land, calling any of
+ * those functions will throw `SqliteError: no such column: username` —
+ * the schema was updated by Task 2.3 but the call sites have not yet
+ * been ported.
+ *
+ * Plan: docs/superpowers/plans/2026-04-30-google-auth-implementation.md
+ */
+
 const DATA_DIR = process.env.HISTORY_DATA_DIR
   ? path.resolve(process.env.HISTORY_DATA_DIR)
   : path.join(process.cwd(), "data");
