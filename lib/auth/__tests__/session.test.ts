@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import Database from "better-sqlite3";
 import { initSchema } from "@/lib/history-db";
-import { createSession, getSessionRow, deleteSession, deleteSessionsForUser, SESSION_TTL_MS } from "../session";
+import { createSession, getSessionRow, deleteSession, deleteSessionsForUser, maybeRenewSession, SESSION_TTL_MS, SLIDING_THROTTLE_MS } from "../session";
 
 let db: Database.Database;
 let userId: number;
@@ -57,5 +57,34 @@ describe("deleteSessionsForUser", () => {
     deleteSessionsForUser(db, userId);
     const rows = db.prepare(`SELECT * FROM sessions WHERE user_id=?`).all(userId);
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe("maybeRenewSession", () => {
+  it("skips when last_seen_at is within the throttle window", () => {
+    const baseNow = 1_700_000_000_000;
+    const sid = createSession(db, { user_id: userId, now: baseNow });
+    const lastSeen = new Date(baseNow).toISOString();
+    expect(maybeRenewSession(db, sid, lastSeen, baseNow + 30 * 60 * 1000)).toBe(false);
+  });
+
+  it("renews when last_seen_at is older than the throttle window", () => {
+    const baseNow = 1_700_000_000_000;
+    const sid = createSession(db, { user_id: userId, now: baseNow });
+    const lastSeen = new Date(baseNow).toISOString();
+    const later = baseNow + 2 * 60 * 60 * 1000;
+    expect(maybeRenewSession(db, sid, lastSeen, later)).toBe(true);
+    const row = getSessionRow(db, sid)!;
+    expect(new Date(row.expires_at).getTime()).toBe(later + SESSION_TTL_MS);
+    expect(new Date(row.last_seen_at!).getTime()).toBe(later);
+  });
+
+  it("treats exactly-throttle-old as still fresh", () => {
+    const baseNow = 1_700_000_000_000;
+    const sid = createSession(db, { user_id: userId, now: baseNow });
+    const lastSeen = new Date(baseNow).toISOString();
+    expect(
+      maybeRenewSession(db, sid, lastSeen, baseNow + SLIDING_THROTTLE_MS)
+    ).toBe(false);
   });
 });
