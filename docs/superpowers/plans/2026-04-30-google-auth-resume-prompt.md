@@ -4,6 +4,18 @@
 
 ---
 
+## Status snapshot (as of branch HEAD)
+
+**Auth flow smoke-tested locally on 2026-04-30** by the user with real Google OAuth credentials. Login works, generations persist correctly, history hydrates with proper thumbs. Three small hotfixes landed during smoke:
+
+- `864202c` — middleware: allow anonymous GET `/api/settings` (Providers hydrate on /login).
+- `7427632` — history util/store: fix `extractUuid` regex + `serverGenToEntry` thumb/mid URL composition for the new `<email>/YYYY/MM/<uuid>.<ext>` layout (was matching only legacy flat layout).
+- `b4c275a` — docs: setup guide + this resume-prompt.
+
+Branch state: 51+ commits ahead of `main`, 220/220 vitest pass, `tsc --noEmit` clean. Ready for prod rollout per `2026-04-30-google-auth-rollout.md` (manual smoke list itself was NOT exhaustively run yet — only the basic login+generate path).
+
+---
+
 ## Path A — coming back BEFORE you've configured Google OAuth
 
 ```
@@ -67,6 +79,29 @@
 - последние 5 строк auth_events table на проде
 
 Помоги: либо откатить на пред-OAuth коммит (восстановить ADMIN_PASSWORD env, вернуть legacy DB из бэкапа), либо хотфикс на ветке — выбираем по серьёзности.
+```
+
+---
+
+## Path E — UI polish, auth уже работает
+
+```
+Auth flow на auth/google-oauth работает локально (smoke-tested). Сейчас хочу заняться UI polish — сделать визуально аккуратнее и удобнее. На данный момент:
+
+- /login — простая карточка с кнопкой "Войти через Google" (app/login/page.tsx, минималистично)
+- header — HeaderUserMenu (avatar + dropdown: email, Админка, Выйти; components/header-user-menu.tsx)
+- /admin — 4 таба (Settings/Styles/Users/Models): components/admin-panel.tsx + components/admin/{users-tab,models-tab,styles-section}.tsx
+- sidebar — 2 таба (История | Мои лимиты): components/history-sidebar.tsx + components/my-quotas-tab.tsx
+- generate-form — кнопка с дизейблом по quota + status line под ней (components/generate-form.tsx ~190+)
+
+Прочитай memory/project_google_auth_in_progress.md для контекста того что было сделано и как устроен flow.
+
+Я хочу улучшить: [конкретные пункты]
+- например: квота-карточки в sidebar выглядят сухо, можно добавить иконки/цвета
+- например: admin-панель таблицы — slick row hover, sticky header, лучше empty states
+- например: header avatar dropdown — анимация открытия, лучше typography
+
+Помоги brainstorm + реализовать. Не трогай auth логику и API routes — они работают и протестированы. Только presentational слой.
 ```
 
 ---
