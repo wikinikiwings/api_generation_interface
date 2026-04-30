@@ -1,6 +1,10 @@
 # Google OAuth Rollout Checklist (prod)
 
 > Companion to `2026-04-30-google-auth-implementation.md` (the implementation plan, all 38 tasks landed on branch `auth/google-oauth`). This doc is the operator's checklist for the actual deploy.
+>
+> **Before you read this:** if you haven't configured Google OAuth yet (no Client ID / Client Secret in hand), start with `2026-04-30-google-auth-setup-guide.md` — it walks through Cloud Console setup, dev `.env.local`, first login, and the smoke list. Come back here when you're ready to push to prod.
+>
+> **Resuming after a break?** See `2026-04-30-google-auth-resume-prompt.md` for copy-paste prompts to brief a fresh Claude Code session.
 
 **Migration decision: fresh DB on rollout.** Confirmed 2026-04-30. The new schema (Tasks 2.3, 5.4 follow-up) is incompatible with the legacy `username`-keyed tables. Existing prod history at `lgen.maxkdiffused.org` will be wiped; image files under `data/history_images/` are kept on disk but become orphans (no row points at them). See `memory/project_oauth_db_migration_open_question.md` if you want the trade-off rationale.
 
