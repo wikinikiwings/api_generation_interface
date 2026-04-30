@@ -27,53 +27,117 @@ let _db: Database.Database | null = null;
 function getDb(): Database.Database {
   if (!_db) {
     _db = new Database(DB_PATH);
-    _db.pragma("journal_mode = WAL");
-    _db.pragma("foreign_keys = ON");
-    initDb(_db);
+    initSchema(_db);
   }
   return _db;
 }
 
-function initDb(db: Database.Database) {
+/**
+ * Initialize all tables and indexes. Idempotent (uses IF NOT EXISTS).
+ * Exported for tests so they can run against an in-memory DB.
+ */
+export function initSchema(db: Database.Database): void {
+  db.exec(`PRAGMA journal_mode = WAL;`);
+  db.exec(`PRAGMA foreign_keys = ON;`);
+
   db.exec(`
-    CREATE TABLE IF NOT EXISTS generations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL,
-      workflow_name TEXT DEFAULT '',
-      prompt_data TEXT DEFAULT '{}',
-      execution_time_seconds REAL DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now')),
-      status TEXT DEFAULT 'completed'
+    CREATE TABLE IF NOT EXISTS users (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      email           TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+      google_sub      TEXT    UNIQUE,
+      name            TEXT,
+      picture_url     TEXT,
+      role            TEXT    NOT NULL DEFAULT 'user'
+                              CHECK (role IN ('user','admin')),
+      status          TEXT    NOT NULL DEFAULT 'active'
+                              CHECK (status IN ('active','banned','deleted')),
+      created_at      TEXT    DEFAULT (datetime('now')),
+      last_login_at   TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      id            TEXT    PRIMARY KEY,
+      user_id       INTEGER NOT NULL,
+      created_at    TEXT    DEFAULT (datetime('now')),
+      expires_at    TEXT    NOT NULL,
+      last_seen_at  TEXT,
+      user_agent    TEXT,
+      ip            TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+    CREATE TABLE IF NOT EXISTS models (
+      model_id              TEXT    PRIMARY KEY,
+      display_name          TEXT    NOT NULL,
+      default_monthly_limit INTEGER,
+      is_active             INTEGER NOT NULL DEFAULT 1,
+      created_at            TEXT    DEFAULT (datetime('now')),
+      updated_at            TEXT    DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS user_quotas (
+      user_id        INTEGER NOT NULL,
+      model_id       TEXT    NOT NULL,
+      monthly_limit  INTEGER,
+      updated_at     TEXT    DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, model_id),
+      FOREIGN KEY (user_id)  REFERENCES users(id)  ON DELETE CASCADE,
+      FOREIGN KEY (model_id) REFERENCES models(model_id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_events (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      timestamp   TEXT    DEFAULT (datetime('now')),
+      event_type  TEXT    NOT NULL,
+      email       TEXT,
+      user_id     INTEGER,
+      ip          TEXT,
+      user_agent  TEXT,
+      details     TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_events_ts ON auth_events(timestamp DESC);
+
+    CREATE TABLE IF NOT EXISTS generations (
+      id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id                 INTEGER NOT NULL,
+      model_id                TEXT,
+      provider                TEXT,
+      workflow_name           TEXT    DEFAULT '',
+      prompt_data             TEXT    DEFAULT '{}',
+      execution_time_seconds  REAL    DEFAULT 0,
+      created_at              TEXT    DEFAULT (datetime('now')),
+      status                  TEXT    DEFAULT 'completed',
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
+    );
+    CREATE INDEX IF NOT EXISTS idx_generations_user_id            ON generations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_generations_created_at         ON generations(created_at);
+    CREATE INDEX IF NOT EXISTS idx_generations_user_model_created ON generations(user_id, model_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_generations_provider           ON generations(provider);
+
     CREATE TABLE IF NOT EXISTS generation_outputs (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      generation_id INTEGER NOT NULL,
-      filename TEXT NOT NULL,
-      filepath TEXT NOT NULL,
-      content_type TEXT NOT NULL,
-      size INTEGER DEFAULT 0,
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      generation_id   INTEGER NOT NULL,
+      filename        TEXT    NOT NULL,
+      filepath        TEXT    NOT NULL,
+      content_type    TEXT    NOT NULL,
+      size            INTEGER DEFAULT 0,
       FOREIGN KEY (generation_id) REFERENCES generations(id) ON DELETE CASCADE
     );
-    CREATE INDEX IF NOT EXISTS idx_generations_username ON generations(username);
-    CREATE INDEX IF NOT EXISTS idx_generations_created_at ON generations(created_at);
-    CREATE INDEX IF NOT EXISTS idx_generation_outputs_generation_id
-      ON generation_outputs(generation_id);
-    CREATE TABLE IF NOT EXISTS app_settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT DEFAULT (datetime('now'))
-    );
-    -- Per-user preferences (Phase 5b: sticky model picker per identity).
-    -- Keyed by username because that's the only identity primitive we have
-    -- (no auth, no user-id surrogate). Aditive table — schema-compatible
-    -- with viewcomfy-claude since it just adds, never modifies.
-    -- selected_model is nullable so a row can exist with NULL meaning
-    -- "explicitly cleared, fall back to default". In practice we just
-    -- delete the row when clearing, but the column allows future prefs.
+    CREATE INDEX IF NOT EXISTS idx_generation_outputs_generation_id ON generation_outputs(generation_id);
+
     CREATE TABLE IF NOT EXISTS user_preferences (
-      username TEXT PRIMARY KEY,
+      user_id        INTEGER PRIMARY KEY,
       selected_model TEXT,
-      updated_at TEXT DEFAULT (datetime('now'))
+      updated_at     TEXT    DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT    PRIMARY KEY,
+      value      TEXT    NOT NULL,
+      updated_at TEXT    DEFAULT (datetime('now'))
     );
   `);
 }
