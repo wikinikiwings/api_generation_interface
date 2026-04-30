@@ -1,64 +1,60 @@
 "use client";
+import * as React from "react";
+import { useRouter } from "next/navigation";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
-
-interface UserContextType {
-  username: string | null;
-  setUsername: (name: string) => void;
-  isUsernameSet: boolean;
+export interface CurrentUser {
+  id: number;
+  email: string;
+  name: string | null;
+  picture_url: string | null;
+  role: "user" | "admin";
 }
 
-const UserContext = createContext<UserContextType>({
-  username: null,
-  setUsername: () => {},
-  isUsernameSet: false,
-});
-
-export function useUser() {
-  return useContext(UserContext);
+interface Ctx {
+  user: CurrentUser | null;
+  loading: boolean;
+  refetch: () => Promise<void>;
 }
 
-// Shared with viewcomfy-claude — users who already set a nickname there
-// auto-log-in here and immediately see their existing history from the
-// shared SQLite DB. See CHECKPOINT-v4.
-const COOKIE_NAME = "viewcomfy_username";
-const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
-
-function getCookie(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-  return match ? decodeURIComponent(match[2]) : null;
-}
-
-function setCookie(name: string, value: string, maxAge: number) {
-  document.cookie = `${name}=${encodeURIComponent(value)};path=/;max-age=${maxAge};SameSite=Lax`;
-}
+const Context = React.createContext<Ctx | null>(null);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  const [username, setUsernameState] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [user, setUser] = React.useState<CurrentUser | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const router = useRouter();
 
-  useEffect(() => {
-    const saved = getCookie(COOKIE_NAME);
-    if (saved) setUsernameState(saved);
-    setLoaded(true);
-  }, []);
-
-  const setUsername = (name: string) => {
-    const trimmed = name.trim();
-    if (trimmed) {
-      setCookie(COOKIE_NAME, trimmed, COOKIE_MAX_AGE);
-      setUsernameState(trimmed);
+  const fetchMe = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      if (res.status === 401) {
+        setUser(null);
+        // We're somewhere protected — middleware will redirect on next nav,
+        // but pre-empt to avoid a flash of stale UI:
+        if (window.location.pathname !== "/login") router.replace("/login");
+        return;
+      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setUser(await res.json());
+    } catch (err) {
+      console.warn("[user-provider] fetchMe failed:", err);
+      setUser(null);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [router]);
 
-  if (!loaded) return null; // avoid hydration mismatch
+  React.useEffect(() => {
+    void fetchMe();
+  }, [fetchMe]);
 
   return (
-    <UserContext.Provider
-      value={{ username, setUsername, isUsernameSet: !!username }}
-    >
-      {children}
-    </UserContext.Provider>
+    <Context.Provider value={{ user, loading, refetch: fetchMe }}>{children}</Context.Provider>
   );
+}
+
+export function useUser(): Ctx {
+  const v = React.useContext(Context);
+  if (!v) throw new Error("useUser must be used inside UserProvider");
+  return v;
 }

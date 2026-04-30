@@ -69,7 +69,7 @@ export function Playground() {
     return () => window.removeEventListener("focus", onFocus);
   }, [loadStyles]);
 
-  const { username } = useUser();
+  const { user } = useUser(); const username = user?.email ?? null;
 
   // Flag set by the polling callback to mark that the next provider change
   // came from the server (admin action), not from a user interaction in

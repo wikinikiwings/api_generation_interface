@@ -150,7 +150,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       .filter((s): s is Style => s !== undefined);
   }, [styles, selectedStyleIds]);
 
-  const { username } = useUser();
+  const { user } = useUser(); const username = user?.email ?? null;
   const prompt = usePromptStore((s) => s.prompt);
   const setPrompt = usePromptStore((s) => s.setPrompt);
   const [images, setImages] = React.useState<DroppedImage[]>([]);

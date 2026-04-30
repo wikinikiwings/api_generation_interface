@@ -33,7 +33,7 @@ export function OutputArea({ historyOpen, onToggleHistory, styles }: OutputAreaP
     setMounted(true);
   }, []);
 
-  const { username } = useUser();
+  const { user } = useUser(); const username = user?.email ?? null;
 
   // Subscribe to server-pushed history events for near-real-time
   // cross-device sync. No-op when username is null. Single mount point

@@ -34,7 +34,7 @@ function toDateInput(d: Date): string {
 }
 
 export function HistorySidebar({ open, setOpen, className, styles }: HistorySidebarProps) {
-  const { username } = useUser();
+  const { user } = useUser(); const username = user?.email ?? null;
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [dateRange, setDateRange] = React.useState<{ from: Date; to: Date }>(() => ({
     from: new Date(Date.now() - 7 * 86400000),
