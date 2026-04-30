@@ -31,8 +31,10 @@ export async function GET(request: NextRequest) {
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const entry = addSubscriber(username, controller);
-      unsubscribe = () => removeSubscriber(username, entry);
+      // TODO(plan-7.5): replace with user.id from getCurrentUser when this route is auth-gated
+      const placeholder = -1;
+      const entry = addSubscriber(placeholder, controller);
+      unsubscribe = () => removeSubscriber(placeholder, entry);
       // If the request is aborted before cancel() fires (some runtimes
       // deliver only one of these), clean up here as a fallback.
       request.signal.addEventListener("abort", () => {

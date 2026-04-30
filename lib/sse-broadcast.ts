@@ -1,9 +1,9 @@
 /**
  * In-memory SSE subscriber registry.
  *
- * Holds per-username sets of ReadableStreamDefaultController so that
- * `broadcastToUser` can enqueue events to every connected client for
- * that username.
+ * Holds per-user_id sets of ReadableStreamDefaultController so that
+ * `broadcastToUserId` can enqueue events to every connected client for
+ * that user_id.
  *
  * Single-process only. For multi-instance deployment this would need
  * to be backed by Redis pub/sub (see spec Future Work).
@@ -17,18 +17,25 @@ interface Subscriber {
   heartbeat: ReturnType<typeof setInterval> | null;
 }
 
+export type SseEvent =
+  | { type: "generation.created"; data: any }
+  | { type: "generation.deleted"; data: { id: number } }
+  | { type: "quota_updated" }
+  | { type: "user_banned" }
+  | { type: "user_role_changed" };
+
 // Stashed on globalThis so Next.js HMR (dev) and any future module
 // hot-reload path in prod don't wipe the registration table while
 // clients still have open EventSource connections. Without this, edits
 // to server files during `npm run dev` silently break cross-tab sync:
-// the new module sees an empty Map and `broadcastToUser` enqueues
+// the new module sees an empty Map and `broadcastToUserId` enqueues
 // nothing, but the old TCP connections stay half-open until the client
 // watchdog (see lib/history/sse.ts) force-reconnects.
 const globalForSubscribers = globalThis as unknown as {
-  __sseSubscribers?: Map<string, Set<Subscriber>>;
+  __sseSubscribers?: Map<number, Set<Subscriber>>;
 };
-const subscribers: Map<string, Set<Subscriber>> =
-  globalForSubscribers.__sseSubscribers ?? new Map<string, Set<Subscriber>>();
+const subscribers: Map<number, Set<Subscriber>> =
+  globalForSubscribers.__sseSubscribers ?? new Map<number, Set<Subscriber>>();
 globalForSubscribers.__sseSubscribers = subscribers;
 
 const encoder = new TextEncoder();
@@ -52,14 +59,14 @@ function serializeComment(text: string): Uint8Array {
 }
 
 export function addSubscriber(
-  username: string,
+  user_id: number,
   controller: Controller
 ): Subscriber {
   const entry: Subscriber = { controller, heartbeat: null };
-  let set = subscribers.get(username);
+  let set = subscribers.get(user_id);
   if (!set) {
     set = new Set();
-    subscribers.set(username, set);
+    subscribers.set(user_id, set);
   }
   set.add(entry);
 
@@ -70,7 +77,7 @@ export function addSubscriber(
     // If even the first enqueue fails the client has gone away mid-open.
     // Remove immediately.
     set.delete(entry);
-    if (set.size === 0) subscribers.delete(username);
+    if (set.size === 0) subscribers.delete(user_id);
     return entry;
   }
 
@@ -85,7 +92,7 @@ export function addSubscriber(
     } catch {
       // Controller is closed. The cancel() path on the route handler
       // will also remove us; this is defensive.
-      removeSubscriber(username, entry);
+      removeSubscriber(user_id, entry);
     }
   }, HEARTBEAT_MS);
 
@@ -93,13 +100,13 @@ export function addSubscriber(
 }
 
 export function removeSubscriber(
-  username: string,
+  user_id: number,
   entry: Subscriber
 ): void {
-  const set = subscribers.get(username);
+  const set = subscribers.get(user_id);
   if (!set) return;
   set.delete(entry);
-  if (set.size === 0) subscribers.delete(username);
+  if (set.size === 0) subscribers.delete(user_id);
   if (entry.heartbeat) {
     clearInterval(entry.heartbeat);
     entry.heartbeat = null;
@@ -112,16 +119,16 @@ export function removeSubscriber(
 }
 
 /**
- * Fan out an event to every connected client for this username.
+ * Fan out an event to every connected client for this user_id.
  * Dead controllers (enqueue throws) are removed from the registry.
  */
-export function broadcastToUser(
-  username: string,
-  event: { type: string; data: unknown }
+export function broadcastToUserId(
+  user_id: number,
+  ev: SseEvent
 ): void {
-  const set = subscribers.get(username);
+  const set = subscribers.get(user_id);
   if (!set || set.size === 0) return;
-  const bytes = serialize(event.type, event.data);
+  const bytes = serialize(ev.type, "data" in ev ? ev.data : undefined);
   const dead: Subscriber[] = [];
   for (const sub of set) {
     try {
@@ -130,10 +137,10 @@ export function broadcastToUser(
       dead.push(sub);
     }
   }
-  for (const d of dead) removeSubscriber(username, d);
+  for (const d of dead) removeSubscriber(user_id, d);
 }
 
 /** Test / debug hook. */
-export function _subscriberCount(username: string): number {
-  return subscribers.get(username)?.size ?? 0;
+export function _subscriberCount(user_id: number): number {
+  return subscribers.get(user_id)?.size ?? 0;
 }

@@ -6,7 +6,7 @@ import {
   getHistoryImagesDir,
   getGenerationById,
 } from "@/lib/history-db";
-import { broadcastToUser } from "@/lib/sse-broadcast";
+import { broadcastToUserId } from "@/lib/sse-broadcast";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
     try {
       const newRow = getGenerationById(id);
       if (newRow) {
-        broadcastToUser(username, {
+        broadcastToUserId(/* TODO(plan-7.3): real user.id from getCurrentUser */ -1, {
           type: "generation.created",
           data: newRow,
         });
@@ -241,7 +241,7 @@ export async function DELETE(request: NextRequest) {
     const { deleted } = deleteGeneration(parseInt(id), username);
     if (deleted) {
       try {
-        broadcastToUser(username, {
+        broadcastToUserId(/* TODO(plan-7.2): real user.id from getCurrentUser */ -1, {
           type: "generation.deleted",
           data: { id: parseInt(id) },
         });
