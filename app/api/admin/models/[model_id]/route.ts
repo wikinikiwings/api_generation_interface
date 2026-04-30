@@ -23,6 +23,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ model_id:
   const sets: string[] = [];
   const args: unknown[] = [];
   let defaultChanged = false;
+  let activeChanged = false;
   if ("default_monthly_limit" in body && body.default_monthly_limit !== before.default_monthly_limit) {
     sets.push("default_monthly_limit=?");
     args.push(body.default_monthly_limit ?? null);
@@ -31,6 +32,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ model_id:
   if ("is_active" in body && body.is_active !== before.is_active) {
     sets.push("is_active=?");
     args.push(body.is_active ? 1 : 0);
+    activeChanged = true;
   }
   if (sets.length === 0) return NextResponse.json({ ok: true, changed: false });
 
@@ -44,7 +46,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ model_id:
       event_type: "admin_model_default_changed", user_id: me.id,
       details: { model_id, from: before.default_monthly_limit, to: body.default_monthly_limit ?? null },
     });
-    // Broadcast to active users without an override on this model
+    // Broadcast to active users without an override on this model — their
+    // applicable_limit just changed, so refetch their quotas.
     const affected = getDb().prepare(`
       SELECT u.id FROM users u
       WHERE u.status='active'
@@ -52,5 +55,16 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ model_id:
     `).all(model_id) as { id: number }[];
     for (const { id } of affected) broadcastToUserId(id, { type: "quota_updated" });
   }
+
+  if (activeChanged) {
+    // is_active flipped — affects the model selector for ALL active users.
+    // Push quota_updated so each client refetches /api/me/quotas (which
+    // filters models by is_active=1) and re-renders the selector.
+    const allActive = getDb().prepare(
+      `SELECT id FROM users WHERE status='active'`
+    ).all() as { id: number }[];
+    for (const { id } of allActive) broadcastToUserId(id, { type: "quota_updated" });
+  }
+
   return NextResponse.json({ ok: true, changed: true });
 }
