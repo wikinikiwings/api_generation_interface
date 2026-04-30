@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import fs from "node:fs";
+import type { ModelId } from "./providers/types";
 
 /**
  * SQLite history layer — schema-compatible with viewcomfy-claude's lib/db.ts
@@ -42,6 +43,8 @@ function getDb(): Database.Database {
   if (!_db) {
     _db = new Database(DB_PATH);
     initSchema(_db);
+    seedModels(_db);
+    bootstrapAdmins(_db, process.env.BOOTSTRAP_ADMIN_EMAILS);
   }
   return _db;
 }
@@ -154,6 +157,55 @@ export function initSchema(db: Database.Database): void {
       updated_at TEXT    DEFAULT (datetime('now'))
     );
   `);
+}
+
+const KNOWN_MODELS: Array<{ id: ModelId; name: string }> = [
+  { id: "nano-banana-pro",   name: "Nano Banana Pro" },
+  { id: "nano-banana-2",     name: "Nano Banana 2" },
+  { id: "nano-banana",       name: "Nano Banana" },
+  { id: "seedream-4-5",      name: "Seedream 4.5" },
+  { id: "seedream-5-0-lite", name: "Seedream 5.0 Lite" },
+];
+
+/**
+ * Insert a row in `models` for each known ModelId. Idempotent. Does NOT
+ * overwrite admin-set `default_monthly_limit` or `display_name` on subsequent
+ * runs (uses INSERT OR IGNORE).
+ */
+export function seedModels(db: Database.Database): void {
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO models (model_id, display_name) VALUES (?, ?)`
+  );
+  const tx = db.transaction((items: Array<{ id: string; name: string }>) => {
+    for (const m of items) stmt.run(m.id, m.name);
+  });
+  tx(KNOWN_MODELS);
+}
+
+/**
+ * Promote the given CSV emails to admin. Idempotent. Does NOT resurrect
+ * soft-deleted users (status='deleted' stays — explicit op required to undo).
+ *
+ * Pass `process.env.BOOTSTRAP_ADMIN_EMAILS` directly. Empty/undefined is a no-op.
+ */
+export function bootstrapAdmins(db: Database.Database, csv: string | undefined): void {
+  if (!csv) return;
+  const emails = csv
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (emails.length === 0) return;
+
+  const stmt = db.prepare(`
+    INSERT INTO users (email, role, status) VALUES (?, 'admin', 'active')
+    ON CONFLICT (email) DO UPDATE
+      SET role='admin', status='active'
+      WHERE status != 'deleted'
+  `);
+  const tx = db.transaction((list: string[]) => {
+    for (const e of list) stmt.run(e);
+  });
+  tx(emails);
 }
 
 /**
