@@ -8,7 +8,6 @@ import { HistorySidebar } from "@/components/history-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { HeaderUserMenu } from "@/components/header-user-menu";
 import { Select } from "@/components/ui/select";
-import { UsernameModal } from "@/components/username-modal";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUser } from "@/app/providers/user-provider";
 import { useQuotas } from "@/app/providers/quotas-provider";
@@ -81,11 +80,10 @@ export function Playground() {
   // consumed inside an effect that already runs on selectedProvider change.
   const adminSwitchRef = React.useRef(false);
 
-  // Per-user model hydration. Runs once when username becomes known
-  // (i.e. after UsernameModal closes on first visit, or immediately on
-  // subsequent visits since the cookie is already set). The store guards
-  // against stomping a click that happens during the in-flight request,
-  // so it's safe to fire even if the user is interacting with the picker.
+  // Per-user model hydration. Runs once when the authenticated user becomes
+  // known (UserProvider has resolved /api/auth/me). The store guards against
+  // stomping a click that happens during the in-flight request, so it's safe
+  // to fire even if the user is interacting with the picker.
   React.useEffect(() => {
     if (username) void hydrateUserModel();
   }, [username, hydrateUserModel]);
@@ -177,11 +175,6 @@ export function Playground() {
     // used to live in the top bar (theme toggle) now lives inside the form
     // card header.
     <div className="flex h-screen flex-col bg-background">
-      {/* Blocking nickname modal — must be inside <UserProvider> scope
-          (provided by app/providers.tsx). Renders null once the username
-          cookie is set. CHECKPOINT-v4 §"Identity layer". */}
-      <UsernameModal />
-
       <main className="flex min-h-0 flex-1 gap-0 p-4 md:p-6">
         {/* Left: form */}
         <section className="hidden w-full max-w-[440px] flex-shrink-0 flex-col overflow-hidden rounded-l-xl bg-muted/50 p-4 md:flex">

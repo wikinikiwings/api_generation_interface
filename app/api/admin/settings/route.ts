@@ -8,8 +8,11 @@ const VALID_PROVIDERS: ProviderId[] = ["wavespeed", "comfy", "fal"];
 /**
  * PUT /api/admin/settings
  *
- * Updates global app settings. Protected by the admin middleware
- * (anything under /api/admin/* requires the admin_auth cookie).
+ * Updates global app settings. Protected by the auth middleware
+ * (any non-public route requires a valid session cookie). The admin
+ * role check belongs in the route handler — currently TODO; this
+ * route still relies on the middleware-level gate plus reverse-proxy
+ * IP filtering at deploy.
  *
  * Body: { selectedProvider: ProviderId }
  *

@@ -158,9 +158,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   },
 
   /**
-   * Per-user hydration. Called from the playground mount once the username
-   * cookie is known (i.e. after UsernameModal closes). Pulls the user's
-   * sticky pick from the server and overwrites the LS-seeded default.
+   * Per-user hydration. Called from the playground mount once the
+   * authenticated user is known (UserProvider has resolved /api/auth/me).
+   * Pulls the user's sticky pick from the server and overwrites the
+   * LS-seeded default.
    *
    * Race semantics: if the user clicks the picker between LS-seed and
    * server response, their click wins — we only overwrite when the server
