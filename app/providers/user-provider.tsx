@@ -48,6 +48,19 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     void fetchMe();
   }, [fetchMe]);
 
+  // Refetch on user_role_changed SSE — the SSE handler in lib/history/sse.ts
+  // posts to BroadcastChannel("auth") when an admin promotes/demotes the
+  // current user. Without this, role-dependent UI (admin badge, /admin link)
+  // would only update on next manual reload.
+  React.useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const bc = new BroadcastChannel("auth");
+    bc.onmessage = (ev) => {
+      if (ev.data?.type === "user_role_changed") void fetchMe();
+    };
+    return () => bc.close();
+  }, [fetchMe]);
+
   return (
     <Context.Provider value={{ user, loading, refetch: fetchMe }}>{children}</Context.Provider>
   );
