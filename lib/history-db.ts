@@ -199,13 +199,12 @@ export function bootstrapAdmins(db: Database.Database, csv: string | undefined):
  * Read a user's persisted model choice. Returns null when:
  *   - the user has never picked anything (no row),
  *   - the row exists but selected_model is NULL.
- * Caller (the API route) translates null → client default "nano-banana-2".
  */
-export function getUserSelectedModel(username: string): string | null {
+export function getUserSelectedModel(user_id: number): string | null {
   const db = getDb();
   const row = db
-    .prepare(`SELECT selected_model FROM user_preferences WHERE username = ?`)
-    .get(username) as { selected_model: string | null } | undefined;
+    .prepare(`SELECT selected_model FROM user_preferences WHERE user_id = ?`)
+    .get(user_id) as { selected_model: string | null } | undefined;
   return row?.selected_model ?? null;
 }
 
@@ -214,15 +213,15 @@ export function getUserSelectedModel(username: string): string | null {
  * concurrent writes from the same user across multiple tabs / devices.
  * Last write wins, which is the right semantic for a UI picker.
  */
-export function setUserSelectedModel(username: string, modelId: string): void {
+export function setUserSelectedModel(user_id: number, modelId: string): void {
   const db = getDb();
-  db.prepare(
-    `INSERT INTO user_preferences (username, selected_model, updated_at)
-     VALUES (?, ?, datetime('now'))
-     ON CONFLICT(username) DO UPDATE SET
-       selected_model = excluded.selected_model,
-       updated_at = datetime('now')`
-  ).run(username, modelId);
+  db.prepare(`
+    INSERT INTO user_preferences (user_id, selected_model, updated_at)
+    VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    ON CONFLICT(user_id) DO UPDATE SET
+      selected_model = excluded.selected_model,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  `).run(user_id, modelId);
 }
 
 export interface IGenerationOutput {

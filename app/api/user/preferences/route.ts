@@ -1,5 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getUserSelectedModel, setUserSelectedModel } from "@/lib/history-db";
+import { getDb, getUserSelectedModel, setUserSelectedModel } from "@/lib/history-db";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 import { listAllModels } from "@/lib/providers/models";
 import type { ModelId } from "@/lib/providers/types";
 
@@ -7,24 +9,23 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Per-user preferences endpoint (Phase 5b: sticky model picker per identity).
+ * Per-user preferences endpoint (Phase 7.6: session-cookie auth).
  *
- * Identity model: same as /api/history — no auth, the client passes the
- * username explicitly. This is fine for an internal-deploy multi-user app
- * where ~20 known people pick their own nicknames; if we ever bolt on real
- * auth we'll switch to reading the username from a server-validated session
- * instead of trusting the query/body, and this route's contract stays the
- * same.
+ * Auth via session cookie. user_id is derived server-side.
  *
- * GET  /api/user/preferences?username=X        → { selectedModel: ModelId | null }
- * PUT  /api/user/preferences  body: { username, selectedModel }
- *                                              → { ok: true }
+ * GET  /api/user/preferences                 → { selectedModel: ModelId | null }
+ * PUT  /api/user/preferences  body: { selectedModel }
+ *                                            → { ok: true }
  *
  * GET returns null when the user has never picked a model — the client
  * then falls back to its own default ("nano-banana-2"). We deliberately
  * don't 404 on missing rows: a fresh user is the common case, not an
  * error.
  */
+
+function readSessionCookie(req: NextRequest): string | null {
+  return req.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
+}
 
 // Build the allowed model set once per cold start. Not const-frozen because
 // listAllModels() reads the registry which can theoretically change between
@@ -35,39 +36,24 @@ function isValidModelId(id: string): id is ModelId {
 }
 
 export async function GET(request: NextRequest) {
-  const username = request.nextUrl.searchParams.get("username");
-  if (!username) {
-    return NextResponse.json({ error: "username is required" }, { status: 400 });
-  }
+  const user = getCurrentUser(getDb(), readSessionCookie(request));
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
-    const selectedModel = getUserSelectedModel(username);
+    const selectedModel = getUserSelectedModel(user.id);
     return NextResponse.json({ selectedModel });
   } catch (err) {
     console.error("[user/preferences GET] failed:", err);
-    return NextResponse.json(
-      { error: "Failed to read preferences" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to read preferences" }, { status: 500 });
   }
 }
 
 export async function PUT(request: NextRequest) {
+  const user = getCurrentUser(getDb(), readSessionCookie(request));
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   try {
-    const body = (await request.json()) as {
-      username?: string;
-      selectedModel?: string;
-    };
-    if (!body.username) {
-      return NextResponse.json(
-        { error: "username is required" },
-        { status: 400 }
-      );
-    }
+    const body = (await request.json()) as { selectedModel?: string };
     if (!body.selectedModel) {
-      return NextResponse.json(
-        { error: "selectedModel is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "selectedModel is required" }, { status: 400 });
     }
     // Validate against the live model registry. This prevents the DB from
     // accumulating typos or values from old client builds that have since
@@ -79,7 +65,7 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
-    setUserSelectedModel(body.username, body.selectedModel);
+    setUserSelectedModel(user.id, body.selectedModel);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

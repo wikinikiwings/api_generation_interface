@@ -85,7 +85,7 @@ export function Playground() {
   // against stomping a click that happens during the in-flight request,
   // so it's safe to fire even if the user is interacting with the picker.
   React.useEffect(() => {
-    if (username) void hydrateUserModel(username);
+    if (username) void hydrateUserModel();
   }, [username, hydrateUserModel]);
 
   // Provider polling: detect admin-side changes to the active provider
@@ -118,8 +118,8 @@ export function Playground() {
   // supported by the new provider (e.g. seedream selected then provider
   // switches to comfy), snap selectedModel to the first one the new provider
   // does support. Without this, the API route would 400 on the next submit.
-  // We pass username so the snapped value also persists server-side — the
-  // user effectively "chose" this fallback by changing the provider.
+  // The snapped fallback is also persisted server-side — the user effectively
+  // "chose" this fallback by changing the provider.
   //
   // If the provider change came from the admin (adminSwitchRef.current is
   // true), surface an extra toast explaining what happened to the model.
@@ -135,7 +135,7 @@ export function Playground() {
         allModels.find((m) => m.id === selectedModel)?.displayName ?? selectedModel;
       const newLabel =
         allModels.find((m) => m.id === fallback)?.displayName ?? fallback;
-      setSelectedModel(fallback, username);
+      setSelectedModel(fallback);
       if (wasAdminSwitch) {
         toast.warning(
           `Модель «${oldLabel}» недоступна для этого endpoint`,
@@ -149,7 +149,7 @@ export function Playground() {
     // whether a model swap happened. Otherwise a future user-driven
     // model change could pick up a stale flag.
     adminSwitchRef.current = false;
-  }, [selectedProvider, selectedModel, setSelectedModel, username]);
+  }, [selectedProvider, selectedModel, setSelectedModel]);
 
   return (
     // The top bar was removed to give the form card more vertical real estate
@@ -175,7 +175,7 @@ export function Playground() {
                 <Select
                   id="model"
                   value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value as ModelId, username)}
+                  onChange={(e) => setSelectedModel(e.target.value as ModelId)}
                   options={modelOptions}
                   className="h-9"
                 />

@@ -87,9 +87,9 @@ interface SettingsState {
   selectedModel: ModelId;
   isHydrated: boolean;
   hydrate: () => Promise<void>;
-  hydrateUserModel: (username: string) => Promise<void>;
+  hydrateUserModel: () => Promise<void>;
   updateSelectedProvider: (id: ProviderId) => Promise<void>;
-  setSelectedModel: (id: ModelId, username?: string | null) => void;
+  setSelectedModel: (id: ModelId) => void;
   selectedStyleIds: string[];
   setSelectedStyleIds: (ids: string[]) => void;
   /**
@@ -121,7 +121,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   selectedStyleIds: loadStyleIds(),
   isHydrated: false,
 
-  setSelectedModel: (id, username) => {
+  setSelectedModel: (id) => {
     set({ selectedModel: id });
     // Warm cache: keep LS in sync so the next page load renders the right
     // model instantly, before the server hydration round-trip completes.
@@ -131,15 +131,13 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     // follow the user to other devices, which is a soft degradation, not
     // a reason to block the UI or surface an error toast. We DO log so it
     // shows up in devtools when debugging "why didn't my pick stick".
-    if (username) {
-      void fetch("/api/user/preferences", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, selectedModel: id }),
-      }).catch((err) => {
-        console.warn("[settings] failed to persist selectedModel:", err);
-      });
-    }
+    void fetch("/api/user/preferences", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selectedModel: id }),
+    }).catch((err) => {
+      console.warn("[settings] failed to persist selectedModel:", err);
+    });
   },
 
   setSelectedStyleIds: (ids) => {
@@ -169,15 +167,11 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
    * actually returns a value AND the local state still matches the LS
    * seed. This avoids the classic "hydration stomps user input" bug.
    */
-  hydrateUserModel: async (username) => {
-    if (!username) return;
+  hydrateUserModel: async () => {
     const before = get().selectedModel;
     try {
-      const res = await fetch(
-        `/api/user/preferences?username=${encodeURIComponent(username)}`,
-        { cache: "no-store" }
-      );
-      if (!res.ok) return;
+      const res = await fetch("/api/user/preferences", { cache: "no-store" });
+      if (!res.ok) return; // 401 = not yet authed; silently skip
       const data = (await res.json()) as { selectedModel: ModelId | null };
       if (!data.selectedModel) return; // first-time user, keep default
       // Stomp-guard: only apply if the user hasn't picked something else
