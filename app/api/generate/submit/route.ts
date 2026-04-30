@@ -1,11 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getProvider, listModelsForProvider } from "@/lib/providers/registry";
-import { getAppSetting } from "@/lib/history-db";
+import { getAppSetting, getDb } from "@/lib/history-db";
 import type {
   GenerateSubmitBody,
   GenerateSubmitResponse,
   ProviderId,
 } from "@/lib/providers/types";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
+import { applicableLimit, usageThisMonth } from "@/lib/quotas";
+import { writeAuthEvent } from "@/lib/auth/audit";
+
+function readSessionCookie(req: NextRequest): string | null {
+  return req.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
+}
 
 const VALID_PROVIDERS: ProviderId[] = ["wavespeed", "comfy", "fal"];
 const DEFAULT_PROVIDER: ProviderId = "wavespeed";
@@ -52,7 +60,7 @@ export const maxDuration = 300;
  * The client then either starts polling /api/generate/status/:id?provider=...
  * (async) or uses the results directly (sync).
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as GenerateSubmitBody;
 
@@ -83,6 +91,34 @@ export async function POST(req: Request) {
         { error: `Provider "${body.provider}" does not support model "${body.modelId}"` },
         { status: 400 }
       );
+    }
+
+    // Auth + quota gate. Must run after model validation so body.modelId is
+    // normalised (default applied) before we look up the limit.
+    const user = getCurrentUser(getDb(), readSessionCookie(req));
+    if (!user) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+
+    if (user.role !== "admin") {
+      // Best-effort gate: up to in-flight count over-budget is possible under
+      // simultaneous bursts (count is read-then-incremented). Acceptable per spec.
+      const limit = applicableLimit(getDb(), user.id, body.modelId);
+      if (limit !== null) {
+        const used = usageThisMonth(getDb(), user.id, body.modelId);
+        if (used >= limit) {
+          writeAuthEvent(getDb(), {
+            event_type: "quota_exceeded",
+            user_id: user.id,
+            email: user.email,
+            details: { model_id: body.modelId, used, limit },
+          });
+          return NextResponse.json(
+            { error: "quota_exceeded", model_id: body.modelId, limit, used },
+            { status: 429 }
+          );
+        }
+      }
     }
 
     const provider = getProvider(body.provider);
