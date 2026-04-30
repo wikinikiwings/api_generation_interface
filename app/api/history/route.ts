@@ -65,6 +65,12 @@ export async function GET(request: NextRequest) {
  *
  * No sharp usage — the client is the sole generator of variants.
  * Returns { id, success, fullUrl, thumbUrl, midUrl }.
+ *
+ * NOTE: This handler still reads `username` from formData and calls the
+ * legacy `saveGeneration` (which references the removed `username` column
+ * and will throw at runtime). Task 7.3 rewrites this handler to use
+ * session-cookie auth + the new `<email>/YYYY/MM/` filesystem layout +
+ * `user_id`/`model_id`/`provider` columns.
  */
 export async function POST(request: NextRequest) {
   try {

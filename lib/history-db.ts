@@ -363,16 +363,12 @@ export function getGenerationById(id: number): IGenerationRecord | null {
 export function deleteGeneration(
   id: number,
   user_id: number
-): { deleted: boolean; filepaths: string[] } {
+): { deleted: boolean } {
   const db = getDb();
-  const outs = db
-    .prepare(`SELECT filepath FROM generation_outputs WHERE generation_id = ?`)
-    .all(id) as { filepath: string }[];
-  const filepaths = outs.map((o) => o.filepath);
   const result = db
     .prepare(`DELETE FROM generations WHERE id = ? AND user_id = ?`)
     .run(id, user_id);
-  return { deleted: result.changes > 0, filepaths };
+  return { deleted: result.changes > 0 };
 }
 
 export function getHistoryImagesDir(): string {
