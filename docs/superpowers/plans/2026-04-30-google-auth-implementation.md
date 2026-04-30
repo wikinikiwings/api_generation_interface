@@ -1118,7 +1118,7 @@ beforeEach(() => {
 
 describe("getCurrentUser", () => {
   it("returns user object for valid sid", () => {
-    const u = getCurrentUser(db, sid);
+    const u = getCurrentUser(db, sid, { now: 1700000000000 });
     expect(u).toEqual(expect.objectContaining({
       id: userId, email: "alice@x.com", name: "Alice", role: "user",
     }));
@@ -1135,9 +1135,9 @@ describe("getCurrentUser", () => {
   });
 
   it("returns null and deletes ALL user sessions if user is banned", () => {
-    const sid2 = createSession(db, { user_id: userId });
+    const sid2 = createSession(db, { user_id: userId, now: 1700000000000 });
     db.prepare(`UPDATE users SET status='banned' WHERE id=?`).run(userId);
-    expect(getCurrentUser(db, sid)).toBeNull();
+    expect(getCurrentUser(db, sid, { now: 1700000000000 })).toBeNull();
     expect(db.prepare(`SELECT * FROM sessions WHERE user_id=?`).all(userId)).toHaveLength(0);
     // sid2 also gone
     void sid2;
@@ -1145,7 +1145,7 @@ describe("getCurrentUser", () => {
 
   it("returns null and deletes sessions if user is soft-deleted", () => {
     db.prepare(`UPDATE users SET status='deleted' WHERE id=?`).run(userId);
-    expect(getCurrentUser(db, sid)).toBeNull();
+    expect(getCurrentUser(db, sid, { now: 1700000000000 })).toBeNull();
     expect(db.prepare(`SELECT * FROM sessions WHERE user_id=?`).all(userId)).toHaveLength(0);
   });
 
