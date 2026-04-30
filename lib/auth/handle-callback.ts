@@ -117,7 +117,9 @@ export async function handleCallback(
   }
 
   db.prepare(
-    `UPDATE users SET google_sub=?, name=?, picture_url=?, last_login_at=datetime('now') WHERE id=?`
+    `UPDATE users SET google_sub=?, name=?, picture_url=?,
+       last_login_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE id=?`
   ).run(payload.sub, payload.name ?? null, payload.picture ?? null, row.id);
 
   const sid = createSession(db, { user_id: row.id, ip: inp.ip, user_agent: inp.user_agent, now: inp.now });
