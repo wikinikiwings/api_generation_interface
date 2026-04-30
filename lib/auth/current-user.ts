@@ -38,6 +38,8 @@ export function getCurrentUser(
 
   const now = opts.now ?? Date.now();
 
+  // Order matters: check expiry first so an already-expired session for a
+  // banned user takes the cheap single-delete path, not bulk-delete-all.
   if (new Date(row.expires_at).getTime() < now) {
     deleteSession(db, sid);
     return null;
