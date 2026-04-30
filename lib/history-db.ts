@@ -341,7 +341,13 @@ export function getGenerations(params: {
 export function getGenerationById(id: number): IGenerationRecord | null {
   const db = getDb();
   const gen = db
-    .prepare(`SELECT * FROM generations WHERE id = ?`)
+    .prepare(`
+      SELECT g.id, u.email AS username, g.workflow_name, g.prompt_data,
+             g.execution_time_seconds, g.created_at, g.status
+      FROM generations g
+      JOIN users u ON u.id = g.user_id
+      WHERE g.id = ?
+    `)
     .get(id) as IGenerationRecord | undefined;
   if (!gen) return null;
   const outs = db
