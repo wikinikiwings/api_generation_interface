@@ -27,7 +27,7 @@
 ## Pre-flight notes for the executing engineer
 
 - **Все таски используют TDD**: сначала пишем падающий тест, видим что он падает с ожидаемой ошибкой, затем минимальная реализация, затем зелёный тест, затем коммит. Не объединять шаги.
-- **Тестовый рантайм**: vitest по умолчанию запускается в Node. Для UI-тестов в задаче указан `// @vitest-environment jsdom` в первой строке файла теста. Существующая конфигурация `vitest.config.ts` это поддерживает.
+- **Тестовый рантайм**: vitest.config.ts задаёт `environment: "jsdom"` по умолчанию. Для тестов с pure-Node API (jose RSA via WebCrypto, crypto.timingSafeEqual в специфических случаях) добавляй `// @vitest-environment node` в первой строке файла теста. Для UI-тестов pragma не нужен — jsdom уже дефолт.
 - **БД в тестах**: используем in-memory SQLite (`new Database(':memory:')`) — никогда не трогаем `data/history.db`. Для этого все DB-функции должны принимать `db` как параметр или брать через DI-фабрику.
 - **Команды запуска**: один тест `npx vitest run path/to/test.ts -t 'test name'`; полный — `npm test`.
 - **Коммиты**: после каждой задачи отдельный коммит. Формат `feat:`, `test:`, `refactor:`, `chore:` следуя стилю репозитория (см. `git log --oneline -20`).
