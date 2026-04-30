@@ -1,7 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-
-const PROD = process.env.NODE_ENV === "production";
-const SESSION_COOKIE = PROD ? "__Host-session" : "session";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
 const PUBLIC_PATH_PREFIXES = ["/api/auth/", "/_next/", "/favicon"];
 const PUBLIC_EXACT = new Set(["/login"]);
@@ -15,7 +13,7 @@ export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   if (isPublic(pathname)) return NextResponse.next();
 
-  const sid = req.cookies.get(SESSION_COOKIE)?.value;
+  const sid = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (sid) return NextResponse.next();
 
   if (pathname.startsWith("/api/")) {

@@ -110,13 +110,8 @@ export async function deleteEntry(
     return;
   }
 
-  if (!currentUsername) {
-    rollbackDeletion(entry.id);
-    debugHistory("deleteEntry.no-username", { id: entry.id });
-    return;
-  }
-
-  const url = `/api/history?id=${entry.serverGenId}&username=${encodeURIComponent(currentUsername)}`;
+  // Server reads the session cookie — no username needed in the URL.
+  const url = `/api/history?id=${entry.serverGenId}`;
   try {
     const [deleteRes] = await Promise.all([
       fetch(url, { method: "DELETE" }),

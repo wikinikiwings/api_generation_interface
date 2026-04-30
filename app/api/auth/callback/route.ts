@@ -2,12 +2,9 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/history-db";
 import { handleCallback } from "@/lib/auth/handle-callback";
 import { fetchGoogleJwks } from "@/lib/auth/google";
+import { SESSION_COOKIE_NAME, TX_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
 export const runtime = "nodejs";
-
-const PROD = process.env.NODE_ENV === "production";
-const TX_COOKIE = PROD ? "__Host-oauth_tx" : "oauth_tx";
-const SESSION_COOKIE = PROD ? "__Host-session" : "session";
 
 export async function GET(req: NextRequest) {
   const cookieSecret = process.env.SESSION_COOKIE_SECRET;
@@ -24,22 +21,24 @@ export async function GET(req: NextRequest) {
   const result = await handleCallback(db, {
     code: req.nextUrl.searchParams.get("code"),
     state_in_query: req.nextUrl.searchParams.get("state"),
-    oauth_tx_cookie: req.cookies.get(TX_COOKIE)?.value ?? null,
+    oauth_tx_cookie: req.cookies.get(TX_COOKIE_NAME)?.value ?? null,
     ip: req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? null,
     user_agent: req.headers.get("user-agent") ?? null,
     env: { client_id, client_secret, redirect_uri, cookie_secret: cookieSecret, allowed_hd: process.env.ALLOWED_HD },
     jwks,
   });
 
+  const PROD = process.env.NODE_ENV === "production";
+
   if (result.kind === "error") {
     const res = NextResponse.json({ error: result.reason }, { status: result.status });
-    res.cookies.set({ name: TX_COOKIE, value: "", maxAge: 0, path: "/" });
+    res.cookies.set({ name: TX_COOKIE_NAME, value: "", maxAge: 0, path: "/" });
     return res;
   }
 
   const res = NextResponse.redirect(new URL(result.redirect_to, req.url), 303);
   res.cookies.set({
-    name: SESSION_COOKIE,
+    name: SESSION_COOKIE_NAME,
     value: result.session_id,
     httpOnly: true,
     sameSite: "lax",
@@ -47,6 +46,6 @@ export async function GET(req: NextRequest) {
     path: "/",
     maxAge: 30 * 24 * 60 * 60,
   });
-  res.cookies.set({ name: TX_COOKIE, value: "", maxAge: 0, path: "/" });
+  res.cookies.set({ name: TX_COOKIE_NAME, value: "", maxAge: 0, path: "/" });
   return res;
 }

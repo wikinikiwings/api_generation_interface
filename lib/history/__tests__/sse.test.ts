@@ -107,7 +107,8 @@ describe("sse handler", () => {
     await vi.advanceTimersByTimeAsync(60);
     expect(global.fetch).toHaveBeenCalled();
     const url = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(url).toContain("username=alice");
+    // username is no longer sent in the URL — server reads session cookie
+    expect(url).toContain("/api/history");
     vi.useRealTimers();
   });
 

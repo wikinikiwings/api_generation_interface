@@ -1,14 +1,21 @@
 import { type NextRequest, NextResponse } from "next/server";
 import {
+  getDb,
   saveGeneration,
   getGenerations,
   deleteGeneration,
   getHistoryImagesDir,
   getGenerationById,
 } from "@/lib/history-db";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 import { broadcastToUserId } from "@/lib/sse-broadcast";
 import fs from "node:fs/promises";
 import path from "node:path";
+
+function readSessionCookie(req: NextRequest): string | null {
+  return req.cookies.get(SESSION_COOKIE_NAME)?.value ?? null;
+}
 
 // sharp is no longer imported — client pre-generates thumb/mid.
 
@@ -17,18 +24,17 @@ import path from "node:path";
 export const maxDuration = 30;
 
 /**
- * GET /api/history?username=X&startDate=&endDate=&limit=&offset=
- * Returns generations for a given username, newest first.
+ * GET /api/history?startDate=&endDate=&limit=&offset=
+ * Returns generations for the session-authenticated user, newest first.
  */
 export async function GET(request: NextRequest) {
+  const user = getCurrentUser(getDb(), readSessionCookie(request));
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const sp = request.nextUrl.searchParams;
-  const username = sp.get("username");
-  if (!username) {
-    return NextResponse.json({ error: "username is required" }, { status: 400 });
-  }
   try {
     const generations = getGenerations({
-      username,
+      user_id: user.id,
       startDate: sp.get("startDate") || undefined,
       endDate: sp.get("endDate") || undefined,
       limit: sp.get("limit") ? parseInt(sp.get("limit")!) : 100,
@@ -223,25 +229,22 @@ async function writeAndTrack(
 }
 
 /**
- * DELETE /api/history?id=X&username=Y — soft delete.
+ * DELETE /api/history?id=X — delete a generation owned by the session user.
  * Removes the DB record. Files on disk intentionally stay (they may be
  * referenced elsewhere, and disk is cheap).
  */
 export async function DELETE(request: NextRequest) {
-  const sp = request.nextUrl.searchParams;
-  const id = sp.get("id");
-  const username = sp.get("username");
-  if (!id || !username) {
-    return NextResponse.json(
-      { error: "id and username are required" },
-      { status: 400 }
-    );
-  }
+  const user = getCurrentUser(getDb(), readSessionCookie(request));
+  if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
   try {
-    const { deleted } = deleteGeneration(parseInt(id), username);
+    const { deleted } = deleteGeneration(parseInt(id), user.id);
     if (deleted) {
       try {
-        broadcastToUserId(/* TODO(plan-7.2): real user.id from getCurrentUser */ -1, {
+        broadcastToUserId(user.id, {
           type: "generation.deleted",
           data: { id: parseInt(id) },
         });

@@ -72,7 +72,7 @@ describe("deleteEntry", () => {
     const id = useHistoryStore.getState().entries[0].id;
     await deleteEntry(id);
     expect(global.fetch).toHaveBeenCalledWith(
-      "/api/history?id=100&username=alice",
+      "/api/history?id=100",
       { method: "DELETE" }
     );
     expect(useHistoryStore.getState().entries[0].state).toBe("removed");

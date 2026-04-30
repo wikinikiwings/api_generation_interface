@@ -3,14 +3,12 @@ import { getDb } from "@/lib/history-db";
 import { deleteSession } from "@/lib/auth/session";
 import { writeAuthEvent } from "@/lib/auth/audit";
 import { getCurrentUser } from "@/lib/auth/current-user";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
 export const runtime = "nodejs";
 
-const PROD = process.env.NODE_ENV === "production";
-const SESSION_COOKIE = PROD ? "__Host-session" : "session";
-
 export async function POST(req: NextRequest) {
-  const sid = req.cookies.get(SESSION_COOKIE)?.value;
+  const sid = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (sid) {
     const db = getDb();
     const user = getCurrentUser(db, sid);
@@ -18,6 +16,6 @@ export async function POST(req: NextRequest) {
     if (user) writeAuthEvent(db, { event_type: "logout", user_id: user.id, email: user.email });
   }
   const res = NextResponse.json({ ok: true });
-  res.cookies.set({ name: SESSION_COOKIE, value: "", maxAge: 0, path: "/" });
+  res.cookies.set({ name: SESSION_COOKIE_NAME, value: "", maxAge: 0, path: "/" });
   return res;
 }

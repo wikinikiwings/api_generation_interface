@@ -249,7 +249,7 @@ export interface IGenerationOutput {
 
 export interface IGenerationRecord {
   id: number;
-  username: string;
+  username: string; // populated from users.email via JOIN; legacy field name kept for client compat (Phase 10 will rename to email)
   workflow_name: string;
   prompt_data: string;
   execution_time_seconds: number;
@@ -298,29 +298,36 @@ export function saveGeneration(params: ISaveGenerationParams): number {
 }
 
 export function getGenerations(params: {
-  username: string;
+  user_id: number;
   startDate?: string;
   endDate?: string;
   limit?: number;
   offset?: number;
 }): IGenerationRecord[] {
   const db = getDb();
-  let q = `SELECT * FROM generations WHERE username = ?`;
-  const p: (string | number)[] = [params.username];
+  // JOIN users so we can alias u.email as username for client compat.
+  // Table-qualify created_at and id to avoid ambiguity after the JOIN.
+  let q = `
+    SELECT g.id, u.email AS username, g.workflow_name, g.prompt_data,
+           g.execution_time_seconds, g.created_at, g.status
+    FROM generations g
+    JOIN users u ON u.id = g.user_id
+    WHERE g.user_id = ?`;
+  const p: (string | number)[] = [params.user_id];
   // Wrap both sides in `datetime()` so SQLite normalizes the stored
   // "YYYY-MM-DD HH:MM:SS" format (from datetime('now')) and the client's
   // ISO "...T...Z" params to the same representation before comparing.
   // Without this, raw TEXT comparison diverges at the date/time separator
   // (space 0x20 vs 'T' 0x54) and excludes rows right at the boundary day.
   if (params.startDate) {
-    q += ` AND datetime(created_at) >= datetime(?)`;
+    q += ` AND datetime(g.created_at) >= datetime(?)`;
     p.push(params.startDate);
   }
   if (params.endDate) {
-    q += ` AND datetime(created_at) <= datetime(?)`;
+    q += ` AND datetime(g.created_at) <= datetime(?)`;
     p.push(params.endDate);
   }
-  q += ` ORDER BY created_at DESC`;
+  q += ` ORDER BY g.created_at DESC`;
   if (params.limit) {
     q += ` LIMIT ?`;
     p.push(params.limit);
@@ -355,7 +362,7 @@ export function getGenerationById(id: number): IGenerationRecord | null {
 
 export function deleteGeneration(
   id: number,
-  username: string
+  user_id: number
 ): { deleted: boolean; filepaths: string[] } {
   const db = getDb();
   const outs = db
@@ -363,8 +370,8 @@ export function deleteGeneration(
     .all(id) as { filepath: string }[];
   const filepaths = outs.map((o) => o.filepath);
   const result = db
-    .prepare(`DELETE FROM generations WHERE id = ? AND username = ?`)
-    .run(id, username);
+    .prepare(`DELETE FROM generations WHERE id = ? AND user_id = ?`)
+    .run(id, user_id);
   return { deleted: result.changes > 0, filepaths };
 }
 

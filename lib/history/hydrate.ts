@@ -37,7 +37,7 @@ function optsKey(opts: HydrateOpts): string {
 
 function buildUrl(opts: HydrateOpts): string {
   const sp = new URLSearchParams();
-  sp.set("username", opts.username);
+  // username is no longer sent to the server — server reads session cookie.
   if (opts.range?.from) {
     const d = new Date(opts.range.from);
     d.setHours(0, 0, 0, 0);
