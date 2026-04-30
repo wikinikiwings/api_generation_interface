@@ -38,12 +38,12 @@ export function getCurrentUser(
 
   const now = opts.now ?? Date.now();
 
-  if (row.status !== "active") {
-    deleteSessionsForUser(db, row.user_id);
-    return null;
-  }
   if (new Date(row.expires_at).getTime() < now) {
     deleteSession(db, sid);
+    return null;
+  }
+  if (row.status !== "active") {
+    deleteSessionsForUser(db, row.user_id);
     return null;
   }
 
