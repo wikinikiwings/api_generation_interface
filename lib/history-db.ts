@@ -68,14 +68,14 @@ export function initSchema(db: Database.Database): void {
                               CHECK (role IN ('user','admin')),
       status          TEXT    NOT NULL DEFAULT 'active'
                               CHECK (status IN ('active','banned','deleted')),
-      created_at      TEXT    DEFAULT (datetime('now')),
+      created_at      TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       last_login_at   TEXT
     );
 
     CREATE TABLE IF NOT EXISTS sessions (
       id            TEXT    PRIMARY KEY,
       user_id       INTEGER NOT NULL,
-      created_at    TEXT    DEFAULT (datetime('now')),
+      created_at    TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       expires_at    TEXT    NOT NULL,
       last_seen_at  TEXT,
       user_agent    TEXT,
@@ -90,15 +90,15 @@ export function initSchema(db: Database.Database): void {
       display_name          TEXT    NOT NULL,
       default_monthly_limit INTEGER,
       is_active             INTEGER NOT NULL DEFAULT 1,
-      created_at            TEXT    DEFAULT (datetime('now')),
-      updated_at            TEXT    DEFAULT (datetime('now'))
+      created_at            TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at            TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
 
     CREATE TABLE IF NOT EXISTS user_quotas (
       user_id        INTEGER NOT NULL,
       model_id       TEXT    NOT NULL,
       monthly_limit  INTEGER,
-      updated_at     TEXT    DEFAULT (datetime('now')),
+      updated_at     TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       PRIMARY KEY (user_id, model_id),
       FOREIGN KEY (user_id)  REFERENCES users(id)  ON DELETE CASCADE,
       FOREIGN KEY (model_id) REFERENCES models(model_id) ON DELETE CASCADE
@@ -106,7 +106,7 @@ export function initSchema(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS auth_events (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      timestamp   TEXT    DEFAULT (datetime('now')),
+      timestamp   TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       event_type  TEXT    NOT NULL,
       email       TEXT,
       user_id     INTEGER,
@@ -124,7 +124,7 @@ export function initSchema(db: Database.Database): void {
       workflow_name           TEXT    DEFAULT '',
       prompt_data             TEXT    DEFAULT '{}',
       execution_time_seconds  REAL    DEFAULT 0,
-      created_at              TEXT    DEFAULT (datetime('now')),
+      created_at              TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       status                  TEXT    DEFAULT 'completed',
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT
     );
@@ -147,14 +147,14 @@ export function initSchema(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS user_preferences (
       user_id        INTEGER PRIMARY KEY,
       selected_model TEXT,
-      updated_at     TEXT    DEFAULT (datetime('now')),
+      updated_at     TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS app_settings (
       key        TEXT    PRIMARY KEY,
       value      TEXT    NOT NULL,
-      updated_at TEXT    DEFAULT (datetime('now'))
+      updated_at TEXT    DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
     );
   `);
 }
