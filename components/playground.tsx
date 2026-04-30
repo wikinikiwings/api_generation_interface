@@ -6,6 +6,7 @@ import { GenerateForm } from "@/components/generate-form";
 import { OutputArea } from "@/components/output-area";
 import { HistorySidebar } from "@/components/history-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { HeaderUserMenu } from "@/components/header-user-menu";
 import { Select } from "@/components/ui/select";
 import { UsernameModal } from "@/components/username-modal";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -181,6 +182,7 @@ export function Playground() {
                 />
               </div>
               <ThemeToggle />
+              <HeaderUserMenu />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-0">
               <GenerateForm styles={styles} />
