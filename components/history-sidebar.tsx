@@ -18,6 +18,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { type Style } from "@/lib/styles/types";
 import { applyCopiedPrompt, joinStyleNames } from "@/lib/styles/apply-copied";
+import { MyQuotasTab } from "@/components/my-quotas-tab";
 
 export interface HistorySidebarProps {
   open: boolean;
@@ -35,6 +36,7 @@ function toDateInput(d: Date): string {
 
 export function HistorySidebar({ open, setOpen, className, styles }: HistorySidebarProps) {
   const { user } = useUser(); const username = user?.email ?? null;
+  const [tab, setTab] = React.useState<"history" | "quotas">("history");
   const [filtersOpen, setFiltersOpen] = React.useState(false);
   const [dateRange, setDateRange] = React.useState<{ from: Date; to: Date }>(() => ({
     from: new Date(Date.now() - 7 * 86400000),
@@ -131,56 +133,91 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
             </Button>
           </div>
         </div>
-        {filtersOpen && (
-          <div className="space-y-2 px-4 pb-3">
-            <div className="flex items-center gap-2">
-              <label className="w-8 text-xs text-muted-foreground">От</label>
-              <input
-                type="date"
-                value={toDateInput(dateRange.from)}
-                max={toDateInput(dateRange.to)}
-                onChange={(e) =>
-                  setDateRange((r) => ({ ...r, from: new Date(e.target.value) }))
-                }
-                className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="w-8 text-xs text-muted-foreground">До</label>
-              <input
-                type="date"
-                value={toDateInput(dateRange.to)}
-                min={toDateInput(dateRange.from)}
-                onChange={(e) =>
-                  setDateRange((r) => ({ ...r, to: new Date(e.target.value) }))
-                }
-                className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
-              />
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 w-full text-xs"
-              onClick={resetDateRange}
-            >
-              Сбросить (7 дней)
-            </Button>
-          </div>
-        )}
-        <div className="px-4 pb-2 text-xs text-muted-foreground">
-          {username ? (
-            <>
-              <span className="font-medium text-foreground">{username}</span>
-              {" · "}Записей:{" "}
-              <span className="font-medium text-foreground">{entries.length}</span>
-            </>
-          ) : (
-            <span>Никнейм не задан</span>
-          )}
+        {/* Tab strip */}
+        <div className="flex border-t border-border">
+          <button
+            onClick={() => setTab("history")}
+            className={cn(
+              "flex-1 py-1.5 text-xs font-medium transition-colors",
+              tab === "history"
+                ? "border-b-2 border-primary text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            История
+          </button>
+          <button
+            onClick={() => setTab("quotas")}
+            className={cn(
+              "flex-1 py-1.5 text-xs font-medium transition-colors",
+              tab === "quotas"
+                ? "border-b-2 border-primary text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Мои лимиты
+          </button>
         </div>
+
+        {tab === "history" && (
+          <>
+            {filtersOpen && (
+              <div className="space-y-2 px-4 pb-3">
+                <div className="flex items-center gap-2">
+                  <label className="w-8 text-xs text-muted-foreground">От</label>
+                  <input
+                    type="date"
+                    value={toDateInput(dateRange.from)}
+                    max={toDateInput(dateRange.to)}
+                    onChange={(e) =>
+                      setDateRange((r) => ({ ...r, from: new Date(e.target.value) }))
+                    }
+                    className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="w-8 text-xs text-muted-foreground">До</label>
+                  <input
+                    type="date"
+                    value={toDateInput(dateRange.to)}
+                    min={toDateInput(dateRange.from)}
+                    onChange={(e) =>
+                      setDateRange((r) => ({ ...r, to: new Date(e.target.value) }))
+                    }
+                    className="flex-1 rounded border border-border bg-background px-2 py-1 text-xs"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 w-full text-xs"
+                  onClick={resetDateRange}
+                >
+                  Сбросить (7 дней)
+                </Button>
+              </div>
+            )}
+            <div className="px-4 pb-2 text-xs text-muted-foreground">
+              {username ? (
+                <>
+                  <span className="font-medium text-foreground">{username}</span>
+                  {" · "}Записей:{" "}
+                  <span className="font-medium text-foreground">{entries.length}</span>
+                </>
+              ) : (
+                <span>Никнейм не задан</span>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Scrollable list */}
+      {/* Content area */}
+      {tab === "quotas" ? (
+        <div className="flex-1 overflow-y-auto">
+          <MyQuotasTab />
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto p-4">
         {error ? (
           <div className="rounded border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive">
@@ -231,6 +268,7 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

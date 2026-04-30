@@ -66,6 +66,32 @@ function open(username: string): void {
     }
   });
 
+  es.addEventListener("quota_updated", () => {
+    lastActivityTs = Date.now();
+    try {
+      new BroadcastChannel("quotas").postMessage({ type: "quota_updated" });
+    } catch (err) {
+      debugHistory("sse.quota_updated.bc-error", { error: String(err) });
+    }
+  });
+
+  es.addEventListener("user_banned", () => {
+    lastActivityTs = Date.now();
+    // The user's session was just revoked. /api/auth/me will 401 next; UserProvider redirects to /login.
+    // Force the redirect immediately for tighter UX:
+    if (typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
+  });
+
+  es.addEventListener("user_role_changed", () => {
+    lastActivityTs = Date.now();
+    // Refresh the user provider so admin/user-only UI updates without a full reload.
+    if (typeof window !== "undefined") {
+      new BroadcastChannel("auth").postMessage({ type: "user_role_changed" });
+    }
+  });
+
   // Heartbeat is a real named event (not a `:` comment) so this listener
   // actually fires — that's how the watchdog knows the stream is alive.
   es.addEventListener("heartbeat", () => {
