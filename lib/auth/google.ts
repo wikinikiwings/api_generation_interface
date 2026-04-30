@@ -109,6 +109,9 @@ export async function fetchGoogleJwks(opts: { fetchImpl?: typeof fetch; now?: nu
   const res = await f(GOOGLE_JWKS_URL);
   if (!res.ok) throw new Error(`Google JWKS fetch failed: ${res.status}`);
   const data = await res.json();
+  if (!data || !Array.isArray((data as { keys?: unknown }).keys) || (data as { keys: unknown[] }).keys.length === 0) {
+    throw new Error(`Google JWKS malformed: ${JSON.stringify(data).slice(0, 200)}`);
+  }
   jwksCache = { fetched_at: now, data };
   return data;
 }
