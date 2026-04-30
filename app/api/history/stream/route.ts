@@ -1,5 +1,8 @@
-import { type NextRequest, NextResponse } from "next/server";
+import { type NextRequest } from "next/server";
 import { addSubscriber, removeSubscriber } from "@/lib/sse-broadcast";
+import { getCurrentUser } from "@/lib/auth/current-user";
+import { getDb } from "@/lib/history-db";
+import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
 // SSE connections are long-lived. maxDuration at 5 minutes keeps them
 // tidy under proxy timeouts and forces a periodic reconnect even in
@@ -12,9 +15,10 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/history/stream?username=X
+ * GET /api/history/stream
  *
- * Opens an SSE stream of history events scoped to the given username.
+ * Opens an SSE stream of history events scoped to the authenticated user.
+ * Auth via session cookie. Subscribes by user.id.
  * Emits:
  *   event: generation.created   data: { ...ServerGeneration }
  *   event: generation.deleted   data: { id: number }
@@ -22,19 +26,17 @@ export const dynamic = "force-dynamic";
  * Plus periodic `: heartbeat` comments to keep proxy connections warm.
  */
 export async function GET(request: NextRequest) {
-  const username = request.nextUrl.searchParams.get("username");
-  if (!username) {
-    return NextResponse.json({ error: "username is required" }, { status: 400 });
+  const user = getCurrentUser(getDb(), request.cookies.get(SESSION_COOKIE_NAME)?.value ?? null);
+  if (!user) {
+    return new Response(null, { status: 401 });
   }
 
   let unsubscribe: (() => void) | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      // TODO(plan-7.5): replace with user.id from getCurrentUser when this route is auth-gated
-      const placeholder = -1;
-      const entry = addSubscriber(placeholder, controller);
-      unsubscribe = () => removeSubscriber(placeholder, entry);
+      const entry = addSubscriber(user.id, controller);
+      unsubscribe = () => removeSubscriber(user.id, entry);
       // If the request is aborted before cancel() fires (some runtimes
       // deliver only one of these), clean up here as a fallback.
       request.signal.addEventListener("abort", () => {

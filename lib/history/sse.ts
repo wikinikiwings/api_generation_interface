@@ -42,9 +42,7 @@ function open(username: string): void {
   close();
   currentUsername = username;
   lastActivityTs = Date.now();
-  es = new EventSource(
-    `/api/history/stream?username=${encodeURIComponent(username)}`
-  );
+  es = new EventSource(`/api/history/stream`);
 
   es.addEventListener("generation.created", (ev) => {
     lastActivityTs = Date.now();
