@@ -159,7 +159,15 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
   }
   const firstImage = row.outputs.find((o) => o.content_type.startsWith("image/"));
   const filename = firstImage?.filepath ?? "";
-  const stem = filename.replace(/\.(png|jpg|jpeg|webp)$/i, "");
+  // Filepath format after Task 7.3: `<email>/<YYYY>/<MM>/<uuid>.<ext>`
+  // (or legacy flat: `<uuid>.<ext>`). The thumb/mid siblings live in the
+  // SAME directory with `thumb_`/`mid_` prefixed onto the basename, NOT
+  // onto the full path. Split into dir + basename before composing.
+  const lastSlash = filename.lastIndexOf("/");
+  const dir = lastSlash >= 0 ? filename.slice(0, lastSlash) : "";
+  const basename = lastSlash >= 0 ? filename.slice(lastSlash + 1) : filename;
+  const baseStem = basename.replace(/\.(png|jpg|jpeg|webp)$/i, "");
+  const dirPrefix = dir ? `${dir}/` : "";
   return {
     id: uuid,
     serverGenId: row.id,
@@ -175,8 +183,8 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
     status: "completed",
     error: null,
     originalUrl: filename ? `/api/history/image/${filename}` : undefined,
-    outputUrl: stem ? `/api/history/image/mid_${stem}.jpg` : undefined,
-    thumbUrl: stem ? `/api/history/image/thumb_${stem}.jpg` : undefined,
+    outputUrl: baseStem ? `/api/history/image/${dirPrefix}mid_${baseStem}.jpg` : undefined,
+    thumbUrl: baseStem ? `/api/history/image/${dirPrefix}thumb_${baseStem}.jpg` : undefined,
   };
 }
 
