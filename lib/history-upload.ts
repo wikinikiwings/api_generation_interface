@@ -9,7 +9,6 @@
 
 export interface UploadHistoryParams {
   uuid: string;
-  username: string;
   workflowName: string;
   promptData: Record<string, unknown>;
   executionTimeSeconds: number;
@@ -33,7 +32,6 @@ export async function uploadHistoryEntry(
 ): Promise<UploadHistoryResult> {
   const fd = new FormData();
   fd.append("uuid", p.uuid);
-  fd.append("username", p.username);
   fd.append("workflowName", p.workflowName);
   fd.append("promptData", JSON.stringify(p.promptData));
   fd.append("executionTimeSeconds", String(p.executionTimeSeconds));

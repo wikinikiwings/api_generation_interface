@@ -310,7 +310,6 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       const doUpload = () =>
         uploadHistoryEntry({
           uuid: historyId,
-          username,
           workflowName,
           promptData: promptPayload,
           executionTimeSeconds: executionTimeMs / 1000,
@@ -369,7 +368,6 @@ export function GenerateForm({ styles }: GenerateFormProps) {
             const freshUuid = uuid();
             res = await uploadHistoryEntry({
               uuid: freshUuid,
-              username,
               workflowName,
               promptData: promptPayload,
               executionTimeSeconds: executionTimeMs / 1000,

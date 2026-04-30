@@ -12,19 +12,6 @@ import type { ModelId } from "./providers/types";
  *   - container    → /data (set via docker-compose volume mount)
  */
 
-/**
- * WARNING: MIGRATION IN PROGRESS (Google OAuth, branch `auth/google-oauth`)
- *
- * Tasks 7.1–7.6 will rewrite the per-user CRUD functions below
- * (saveGeneration, getGenerations, getGenerationById, deleteGeneration,
- * getUserSelectedModel, setUserSelectedModel) to use `user_id INTEGER`
- * instead of `username TEXT`. Until those tasks land, calling any of
- * those functions will throw `SqliteError: no such column: username` —
- * the schema was updated by Task 2.3 but the call sites have not yet
- * been ported.
- *
- * Plan: docs/superpowers/plans/2026-04-30-google-auth-implementation.md
- */
 
 const DATA_DIR = process.env.HISTORY_DATA_DIR
   ? path.resolve(process.env.HISTORY_DATA_DIR)
@@ -259,7 +246,9 @@ export interface IGenerationRecord {
 }
 
 export interface ISaveGenerationParams {
-  username: string;
+  user_id: number;
+  model_id: string | null;
+  provider: string | null;
   workflowName: string;
   promptData: Record<string, unknown>;
   executionTimeSeconds: number;
@@ -274,8 +263,8 @@ export interface ISaveGenerationParams {
 export function saveGeneration(params: ISaveGenerationParams): number {
   const db = getDb();
   const insertGen = db.prepare(
-    `INSERT INTO generations (username, workflow_name, prompt_data, execution_time_seconds)
-     VALUES (?, ?, ?, ?)`
+    `INSERT INTO generations (user_id, model_id, provider, workflow_name, prompt_data, execution_time_seconds)
+     VALUES (?, ?, ?, ?, ?, ?)`
   );
   const insertOut = db.prepare(
     `INSERT INTO generation_outputs (generation_id, filename, filepath, content_type, size)
@@ -283,7 +272,9 @@ export function saveGeneration(params: ISaveGenerationParams): number {
   );
   const tx = db.transaction(() => {
     const result = insertGen.run(
-      params.username,
+      params.user_id,
+      params.model_id,
+      params.provider,
       params.workflowName,
       JSON.stringify(params.promptData),
       params.executionTimeSeconds
