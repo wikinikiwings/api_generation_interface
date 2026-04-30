@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { UsernameModal } from "@/components/username-modal";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useUser } from "@/app/providers/user-provider";
+import { useQuotas } from "@/app/providers/quotas-provider";
 import { listAllModels } from "@/lib/providers/models";
 import type { ModelId, ProviderId } from "@/lib/providers/types";
 import type { Style } from "@/lib/styles/types";
@@ -106,6 +107,8 @@ export function Playground() {
     return cleanup;
   }, [startProviderPolling]);
 
+  const { getForModel } = useQuotas();
+
   // Filter the visible model options to those supported by the active provider.
   const modelOptions = React.useMemo(
     () =>
@@ -113,6 +116,22 @@ export function Playground() {
         .filter((m) => PROVIDER_MODELS[selectedProvider].includes(m.id))
         .map((m) => ({ value: m.id, label: m.displayName })),
     [selectedProvider]
+  );
+
+  // Augment model options with quota exhaustion indicators.
+  // The Select component does not support per-option disabled, so we append
+  // ⛔ to the label to signal exhausted models visually.
+  const modelOptionsWithQuota = React.useMemo(
+    () =>
+      modelOptions.map((opt) => {
+        const q = getForModel(opt.value);
+        const isExhausted = q && !q.unlimited && q.used >= (q.limit ?? 0);
+        return {
+          ...opt,
+          label: isExhausted ? `${opt.label} ⛔` : opt.label,
+        };
+      }),
+    [modelOptions, getForModel]
   );
 
   // If the user switches provider while their currently-selected model isn't
@@ -177,7 +196,7 @@ export function Playground() {
                   id="model"
                   value={selectedModel}
                   onChange={(e) => setSelectedModel(e.target.value as ModelId)}
-                  options={modelOptions}
+                  options={modelOptionsWithQuota}
                   className="h-9"
                 />
               </div>

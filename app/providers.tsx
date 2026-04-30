@@ -4,6 +4,7 @@ import * as React from "react";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import { UserProvider } from "@/app/providers/user-provider";
+import { QuotasProvider } from "@/app/providers/quotas-provider";
 import { useSettingsStore } from "@/stores/settings-store";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -24,7 +25,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       enableSystem
       disableTransitionOnChange
     >
-      <UserProvider>{children}</UserProvider>
+      <UserProvider>
+        <QuotasProvider>
+          {children}
+        </QuotasProvider>
+      </UserProvider>
       <Toaster
         position="top-right"
         richColors

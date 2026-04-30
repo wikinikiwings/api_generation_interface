@@ -13,6 +13,7 @@ import { usePromptStore } from "@/stores/prompt-store";
 import { MODELS_META } from "@/lib/providers/models";
 import type { ModelId } from "@/lib/providers/types";
 import { useUser } from "@/app/providers/user-provider";
+import { useQuotas } from "@/app/providers/quotas-provider";
 import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
@@ -151,6 +152,9 @@ export function GenerateForm({ styles }: GenerateFormProps) {
   }, [styles, selectedStyleIds]);
 
   const { user } = useUser(); const username = user?.email ?? null;
+  const { getForModel, refetch: refetchQuotas, bumpUsage } = useQuotas();
+  const quota = getForModel(selectedModel);
+  const exhausted = Boolean(quota && !quota.unlimited && quota.used >= (quota.limit ?? 0));
   const prompt = usePromptStore((s) => s.prompt);
   const setPrompt = usePromptStore((s) => s.setPrompt);
   const [images, setImages] = React.useState<DroppedImage[]>([]);
@@ -394,6 +398,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
             full: res.fullUrl,
           },
         });
+        bumpUsage(selectedModel);
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") {
           void deleteEntry(historyId);
@@ -482,6 +487,15 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       });
       if (!submitRes.ok) {
         const body = await submitRes.json().catch(() => ({}));
+        if (submitRes.status === 429 && body?.error === "quota_exceeded") {
+          toast.error(
+            `Лимит модели ${body.model_id} исчерпан в этом месяце (${body.used}/${body.limit}). ` +
+            `Сбросится 1 числа следующего месяца. Можно попросить админа увеличить лимит.`
+          );
+          void refetchQuotas();
+          void deleteEntry(historyId);
+          return;  // exit handler cleanly; finally still runs for inflightGenerations + activeCount
+        }
         throw new Error(body.error || `HTTP ${submitRes.status}`);
       }
 
@@ -665,17 +679,33 @@ export function GenerateForm({ styles }: GenerateFormProps) {
           form area so it's always reachable regardless of form length. The
           negative margins bleed the background color to the card edges,
           counteracting the scroll-container's p-5 padding. */}
-      <div className="sticky bottom-0 -mx-5 mt-auto flex items-center border-t border-border bg-background px-5 py-1">
+      <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col border-t border-border bg-background px-5 py-1">
         <Button
           type="submit"
           size="lg"
           className="w-full"
+          disabled={exhausted}
+          title={exhausted ? "Лимит исчерпан в этом месяце" : undefined}
         >
           <Sparkles />
           {activeCount > 0
             ? `Сгенерировать (в работе: ${activeCount})`
             : "Сгенерировать"}
         </Button>
+        {quota && (
+          <div className={`text-xs mt-1 ${
+            quota.unlimited ? "text-zinc-500"
+              : quota.used >= (quota.limit ?? 0) ? "text-red-600"
+              : quota.used / (quota.limit ?? 1) >= 0.8 ? "text-orange-600"
+              : "text-zinc-500"
+          }`}>
+            {quota.unlimited
+              ? "Без ограничений"
+              : quota.used >= (quota.limit ?? 0)
+                ? `Лимит исчерпан · сбросится 1 числа следующего месяца`
+                : `${quota.used} / ${quota.limit} в этом месяце`}
+          </div>
+        )}
       </div>
 
       <PromptPreviewDialog
