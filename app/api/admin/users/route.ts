@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     SELECT u.id, u.email, u.name, u.role, u.status, u.last_login_at, u.created_at,
       (SELECT COUNT(*) FROM generations g
         WHERE g.user_id = u.id
-          AND g.status='completed'
+          AND g.status IN ('completed', 'deleted')
           AND g.created_at >= strftime('%Y-%m-01T00:00:00.000Z', 'now')
       ) AS gens_this_month
     FROM users u

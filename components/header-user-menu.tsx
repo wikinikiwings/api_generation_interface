@@ -33,7 +33,12 @@ export function HeaderUserMenu() {
       >
         {user.picture_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={user.picture_url} alt="" className="w-7 h-7 rounded-full" />
+          <img
+            src={user.picture_url}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="w-7 h-7 rounded-full"
+          />
         ) : (
           <span className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-700 grid place-items-center text-xs font-medium">
             {initial}

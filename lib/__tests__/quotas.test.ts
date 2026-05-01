@@ -59,7 +59,7 @@ describe("usageThisMonth", () => {
     expect(usageThisMonth(db, userId, "nano-banana-pro", new Date(Date.UTC(2026, 3, 15)))).toBe(0);
   });
 
-  it("counts only completed generations in current month", () => {
+  it("counts completed and soft-deleted generations in current month", () => {
     const ins = db.prepare(`INSERT INTO generations (user_id, model_id, status, created_at) VALUES (?, ?, ?, ?)`);
     ins.run(userId, "nano-banana-pro", "completed", "2026-04-10T12:00:00Z");
     ins.run(userId, "nano-banana-pro", "completed", "2026-04-25T12:00:00Z");
@@ -71,5 +71,15 @@ describe("usageThisMonth", () => {
     const now = new Date(Date.UTC(2026, 3, 30));
     expect(usageThisMonth(db, userId, "nano-banana-pro", now)).toBe(2);
     expect(usageThisMonth(db, userId, "seedream-4-5", now)).toBe(1);
+  });
+
+  it("soft-deleted rows still count (no quota refund on user delete)", () => {
+    const ins = db.prepare(`INSERT INTO generations (user_id, model_id, status, created_at) VALUES (?, ?, ?, ?)`);
+    ins.run(userId, "nano-banana-pro", "completed", "2026-04-10T12:00:00Z");
+    ins.run(userId, "nano-banana-pro", "deleted",   "2026-04-11T12:00:00Z");
+    ins.run(userId, "nano-banana-pro", "deleted",   "2026-04-12T12:00:00Z");
+
+    const now = new Date(Date.UTC(2026, 3, 30));
+    expect(usageThisMonth(db, userId, "nano-banana-pro", now)).toBe(3);
   });
 });

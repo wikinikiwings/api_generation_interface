@@ -302,7 +302,7 @@ export function getGenerations(params: {
            g.execution_time_seconds, g.created_at, g.status
     FROM generations g
     JOIN users u ON u.id = g.user_id
-    WHERE g.user_id = ?`;
+    WHERE g.user_id = ? AND g.status != 'deleted'`;
   const p: (string | number)[] = [params.user_id];
   // Wrap both sides in `datetime()` so SQLite normalizes the stored
   // "YYYY-MM-DD HH:MM:SS" format (from datetime('now')) and the client's
@@ -345,7 +345,7 @@ export function getGenerationById(id: number): IGenerationRecord | null {
              g.execution_time_seconds, g.created_at, g.status
       FROM generations g
       JOIN users u ON u.id = g.user_id
-      WHERE g.id = ?
+      WHERE g.id = ? AND g.status != 'deleted'
     `)
     .get(id) as IGenerationRecord | undefined;
   if (!gen) return null;
@@ -361,8 +361,18 @@ export function deleteGeneration(
   user_id: number
 ): { deleted: boolean } {
   const db = getDb();
+  // Soft-delete: flip status to 'deleted' so the row is hidden from the
+  // user's history but still counted by usageThisMonth(). This preserves
+  // the "you used N this month" billing semantics — a user can clean up
+  // outputs they don't like without getting a quota refund. The row stays
+  // forever; generation_outputs (CASCADE-bound) survive too. The HTTP
+  // DELETE handler still broadcasts `generation.deleted` so other tabs
+  // remove the entry from their UI exactly as before.
   const result = db
-    .prepare(`DELETE FROM generations WHERE id = ? AND user_id = ?`)
+    .prepare(
+      `UPDATE generations SET status = 'deleted'
+       WHERE id = ? AND user_id = ? AND status != 'deleted'`
+    )
     .run(id, user_id);
   return { deleted: result.changes > 0 };
 }

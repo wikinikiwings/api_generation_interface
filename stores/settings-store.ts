@@ -87,6 +87,7 @@ interface SettingsState {
   selectedModel: ModelId;
   isHydrated: boolean;
   hydrate: () => Promise<void>;
+  hydrateClient: () => void;
   hydrateUserModel: () => Promise<void>;
   updateSelectedProvider: (id: ProviderId) => Promise<void>;
   setSelectedModel: (id: ModelId) => void;
@@ -117,9 +118,21 @@ interface SettingsState {
 
 export const useSettingsStore = create<SettingsState>()((set, get) => ({
   selectedProvider: "wavespeed",
-  selectedModel: loadModel(),
-  selectedStyleIds: loadStyleIds(),
+  // Initial values must match what the server renders to avoid hydration
+  // mismatches. localStorage-backed values are pulled in from `hydrateClient()`
+  // on mount (see Playground); React then re-renders cleanly with the
+  // restored choice.
+  selectedModel: "nano-banana-2",
+  selectedStyleIds: [],
   isHydrated: false,
+
+  hydrateClient: () => {
+    if (typeof window === "undefined") return;
+    set({
+      selectedModel: loadModel(),
+      selectedStyleIds: loadStyleIds(),
+    });
+  },
 
   setSelectedModel: (id) => {
     set({ selectedModel: id });

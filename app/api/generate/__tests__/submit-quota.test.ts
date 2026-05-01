@@ -15,7 +15,12 @@ beforeEach(() => {
 
 it("blocks when usage equals limit", () => {
   db.prepare(`UPDATE models SET default_monthly_limit=2 WHERE model_id='nano-banana-pro'`).run();
-  const ins = db.prepare(`INSERT INTO generations (user_id, model_id, status, created_at) VALUES (?, 'nano-banana-pro', 'completed', datetime('now'))`);
+  // Omit created_at so the schema default (strftime ISO with Z) fills it.
+  // Earlier this row used `datetime('now')`, which yields "YYYY-MM-DD HH:MM:SS"
+  // (space separator, no Z) and lex-compared below the ISO lower bound on
+  // the 1st of any month — making the test flaky. usageThisMonth does raw
+  // string comparison; the schema default matches the bounds exactly.
+  const ins = db.prepare(`INSERT INTO generations (user_id, model_id, status) VALUES (?, 'nano-banana-pro', 'completed')`);
   ins.run(userId);
   ins.run(userId);
   expect(usageThisMonth(db, userId, "nano-banana-pro")).toBe(2);

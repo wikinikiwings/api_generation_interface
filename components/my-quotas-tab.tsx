@@ -1,38 +1,35 @@
 "use client";
 import * as React from "react";
-import { useUser } from "@/app/providers/user-provider";
-
-interface Quota {
-  model_id: string; display_name: string;
-  limit: number | null; used: number; unlimited: boolean;
-}
+import { useQuotas, type Quota } from "@/app/providers/quotas-provider";
+import { listAllModels } from "@/lib/providers/models";
 
 export function MyQuotasTab() {
-  const [data, setData] = React.useState<Quota[] | null>(null);
+  // Read from the shared QuotasProvider so optimistic `bumpUsage()` calls
+  // from the form (and SSE-driven refetches via BroadcastChannel) reflect
+  // here without a remount. The provider already handles initial fetch,
+  // visibilitychange refresh, and the BC subscription.
+  const { quotas, loading } = useQuotas();
 
-  const refetch = React.useCallback(async () => {
-    const r = await fetch("/api/me/quotas", { cache: "no-store" });
-    if (r.ok) setData(await r.json());
+  // Match the order the model picker uses on the left side of Playground:
+  // declaration order in MODELS_META (Pro → Flash → original → seedream …).
+  // Anything the picker doesn't know about (shouldn't happen, defensive)
+  // lands at the bottom alphabetically.
+  const modelOrder = React.useMemo(() => {
+    const idx = new Map<string, number>();
+    listAllModels().forEach((m, i) => idx.set(m.id, i));
+    return idx;
   }, []);
 
-  React.useEffect(() => { void refetch(); }, [refetch]);
+  if (loading && quotas.length === 0) {
+    return <div className="p-4 text-sm text-muted">Loading...</div>;
+  }
 
-  // Subscribe to BroadcastChannel("quotas") — SSE quota_updated posts here via lib/history/sse.ts
-  React.useEffect(() => {
-    if (typeof BroadcastChannel === "undefined") return;
-    const bc = new BroadcastChannel("quotas");
-    bc.onmessage = (ev) => {
-      if (ev.data?.type === "quota_updated") void refetch();
-    };
-    return () => bc.close();
-  }, [refetch]);
-
-  if (!data) return <div className="p-4 text-sm text-muted">Loading...</div>;
-
-  const sorted = [...data].sort((a, b) => {
-    const aExhausted = !a.unlimited && a.used >= (a.limit ?? 0);
-    const bExhausted = !b.unlimited && b.used >= (b.limit ?? 0);
-    if (aExhausted !== bExhausted) return aExhausted ? 1 : -1;
+  const sorted = [...quotas].sort((a, b) => {
+    const ai = modelOrder.get(a.model_id);
+    const bi = modelOrder.get(b.model_id);
+    if (ai !== undefined && bi !== undefined) return ai - bi;
+    if (ai !== undefined) return -1;
+    if (bi !== undefined) return 1;
     return a.display_name.localeCompare(b.display_name);
   });
 

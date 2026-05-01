@@ -40,8 +40,13 @@ export function applicableLimit(
 }
 
 /**
- * Count of `completed` generations for (user, model) within the current
+ * Count of billable generations for (user, model) within the current
  * calendar month UTC. `now` defaults to `new Date()` for testability.
+ *
+ * Includes both 'completed' and 'deleted' rows: once a generation
+ * succeeded, the compute cost was paid, so the user later soft-deleting
+ * the output doesn't refund the quota. This is the "count once" billing
+ * model (see deleteGeneration in history-db.ts).
  */
 export function usageThisMonth(
   db: Database.Database,
@@ -54,7 +59,7 @@ export function usageThisMonth(
     SELECT COUNT(*) AS n FROM generations
     WHERE user_id=? AND model_id=?
       AND created_at >= ? AND created_at < ?
-      AND status = 'completed'
+      AND status IN ('completed', 'deleted')
   `).get(user_id, model_id, start, end) as { n: number };
   return r.n;
 }
