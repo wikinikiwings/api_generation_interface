@@ -218,12 +218,19 @@ export async function POST(request: NextRequest) {
       console.error("[history POST] admin broadcast failed:", err);
     }
 
+    // Per-segment encoding. Encoding the whole `relDir` (which contains
+    // slashes) escapes them to %2F, which Next.js's catch-all route sees
+    // as one segment containing literal "/" after decoding — and the
+    // route's `s.includes("/")` traversal check then rejects it as 400.
+    // Encode email and filename separately, leave the path separators raw
+    // so the [...path] handler splits into 4 clean segments.
+    const urlPrefix = `/api/history/image/${encodeURIComponent(user.email)}/${yyyy}/${mm}`;
     return NextResponse.json({
       id,
       success: true,
-      fullUrl: `/api/history/image/${encodeURIComponent(relDir)}/${encodeURIComponent(originalFilename)}`,
-      thumbUrl: `/api/history/image/${encodeURIComponent(relDir)}/${encodeURIComponent(thumbFilename)}`,
-      midUrl: `/api/history/image/${encodeURIComponent(relDir)}/${encodeURIComponent(midFilename)}`,
+      fullUrl: `${urlPrefix}/${encodeURIComponent(originalFilename)}`,
+      thumbUrl: `${urlPrefix}/${encodeURIComponent(thumbFilename)}`,
+      midUrl: `${urlPrefix}/${encodeURIComponent(midFilename)}`,
     });
   } catch (err) {
     console.error("[history POST] failed:", err);

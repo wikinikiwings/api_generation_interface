@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getProvider, listModelsForProvider } from "@/lib/providers/registry";
 import { getAppSetting, getDb } from "@/lib/history-db";
 import type {
+  EditInput,
   GenerateSubmitBody,
   GenerateSubmitResponse,
   ProviderId,
@@ -132,7 +133,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await provider.submit(body);
+    // Server-populated fields the client must NOT supply. `userEmail` is
+    // used by sync providers to write transient output files into the
+    // owner's `<email>/<YYYY>/<MM>/` subtree, matching what the
+    // [...path] image route requires for read auth.
+    const input: EditInput = { ...body, userEmail: user.email };
+
+    const result = await provider.submit(input);
 
     const response: GenerateSubmitResponse =
       result.kind === "async"

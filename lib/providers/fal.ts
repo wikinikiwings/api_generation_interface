@@ -277,7 +277,7 @@ export const falProvider: Provider = {
     const savedUrls: string[] = [];
     for (const img of data.images) {
       try {
-        const saved = await downloadAndSave(img.url, input.outputFormat);
+        const saved = await downloadAndSave(img.url, input.userEmail, input.outputFormat);
         savedUrls.push(saved.publicUrl);
       } catch (err) {
         console.error(

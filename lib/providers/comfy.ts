@@ -222,25 +222,30 @@ interface CreateUploadSlotResponse {
  */
 async function createUploadSlot(
   filename: string,
-  contentType: string
+  contentType: string,
+  index: number
 ): Promise<CreateUploadSlotResponse> {
-  const res = await fetch(STORAGE_CREATE_ENDPOINT, {
-    method: "POST",
-    headers: authHeaders({
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    }),
-    body: JSON.stringify({
-      file_name: filename,
-      content_type: contentType,
-    }),
-    cache: "no-store",
-  });
+  const stage = `upload-slot i=${index}`;
+  const t0 = Date.now();
+  const res = await fetchWithRetry(stage, () =>
+    fetch(STORAGE_CREATE_ENDPOINT, {
+      method: "POST",
+      headers: authHeaders({
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      }),
+      body: JSON.stringify({
+        file_name: filename,
+        content_type: contentType,
+      }),
+      cache: "no-store",
+    })
+  );
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `Comfy /customers/storage error (${res.status}): ${
+      `[comfy/${stage}] /customers/storage error (${res.status}) after ${Date.now() - t0}ms: ${
         friendlyBodyMessage(text) || res.statusText
       }`
     );
@@ -249,9 +254,10 @@ async function createUploadSlot(
   const data = (await res.json()) as CreateUploadSlotResponse;
   if (!data.upload_url || !data.download_url) {
     throw new Error(
-      "Comfy /customers/storage response missing upload_url/download_url"
+      `[comfy/${stage}] response missing upload_url/download_url`
     );
   }
+  console.log(`[comfy/${stage}] slot created in ${Date.now() - t0}ms`);
   return data;
 }
 
@@ -264,8 +270,11 @@ async function createUploadSlot(
 async function uploadBinaryToSignedUrl(
   signedUrl: string,
   buffer: Buffer,
-  contentType: string
+  contentType: string,
+  index: number
 ): Promise<void> {
+  const stage = `put i=${index} size=${Math.round(buffer.length / 1024)}KB`;
+  const t0 = Date.now();
   // Type-level workaround for Next.js 15 + TS 5.7 + @types/node combo:
   //   - DOM BodyInit doesn't include Buffer / Uint8Array
   //   - BlobPart requires ArrayBuffer, but Buffer is typed as ArrayBufferLike
@@ -274,18 +283,23 @@ async function uploadBinaryToSignedUrl(
   // ArrayBuffer, never SharedArrayBuffer — the broader type is just defensive.
   // Cast through `unknown` to tell TS we know what we're doing. Runtime is
   // unchanged: fetch accepts Buffer natively in Node 20.
-  const res = await fetch(signedUrl, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: buffer as unknown as BodyInit,
-    cache: "no-store",
-  });
+  const res = await fetchWithRetry(stage, () =>
+    fetch(signedUrl, {
+      method: "PUT",
+      headers: { "Content-Type": contentType },
+      body: buffer as unknown as BodyInit,
+      cache: "no-store",
+    })
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(
-      `Signed PUT upload failed (${res.status}): ${text.slice(0, 200) || res.statusText}`
+      `[comfy/${stage}] PUT failed (${res.status}) after ${Date.now() - t0}ms: ${
+        text.slice(0, 200) || res.statusText
+      }`
     );
   }
+  console.log(`[comfy/${stage}] uploaded in ${Date.now() - t0}ms`);
 }
 
 /**
@@ -309,8 +323,8 @@ async function uploadSingleImage(
   const ext = normalizeExt(extFromContentType(mimeType));
   const filename = `wsc_${Date.now()}_${index}.${ext}`;
 
-  const slot = await createUploadSlot(filename, mimeType);
-  await uploadBinaryToSignedUrl(slot.upload_url, buffer, mimeType);
+  const slot = await createUploadSlot(filename, mimeType, index);
+  await uploadBinaryToSignedUrl(slot.upload_url, buffer, mimeType, index);
   return { fileUri: slot.download_url, mimeType };
 }
 
@@ -641,77 +655,103 @@ const INITIAL_RETRY_DELAY_MS = 5000;
 const MAX_RETRY_DELAY_MS = 15000;
 
 /**
+ * Run a fetch op with retry on transient network errors and retriable
+ * HTTP status codes. Same defensive policy across all four upstream
+ * stages (upload-slot, signed-url PUT, Gemini POST, BytePlus POST).
+ *
+ * Why this exists:
+ *   The earlier inline retry loop in postGeminiWithRetry handled retriable
+ *   status codes but NOT network errors thrown by fetch() itself
+ *   (ECONNRESET, "fetch failed", body-stream "aborted"). The upload-slot
+ *   and signed-URL PUT had no retry at all, so any single transient hiccup
+ *   on one of up to 10 sequential PUTs sank the whole submit. This helper
+ *   closes that asymmetry.
+ *
+ * Returns the Response. Caller decides what to do with non-OK statuses
+ * (read body for error context). Throws only when network errors persist
+ * across all retries.
+ */
+async function fetchWithRetry(
+  stage: string,
+  op: () => Promise<Response>
+): Promise<Response> {
+  let delay = INITIAL_RETRY_DELAY_MS;
+  let lastFailureLabel = "";
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      console.warn(
+        `[comfy/${stage}] retry ${attempt}/${MAX_RETRIES} after ${delay}ms (previous: ${lastFailureLabel})`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
+    }
+
+    let res: Response;
+    try {
+      res = await op();
+    } catch (err) {
+      // fetch() threw — DNS, TLS, ECONNRESET, body-stream aborted.
+      const message = err instanceof Error ? err.message : String(err);
+      lastFailureLabel = `network: ${message}`;
+      if (attempt === MAX_RETRIES) {
+        throw new Error(
+          `[comfy/${stage}] network error after ${MAX_RETRIES + 1} attempts: ${message}`
+        );
+      }
+      continue;
+    }
+
+    if (res.ok) return res;
+    if (!RETRIABLE_STATUSES.has(res.status)) return res;
+
+    lastFailureLabel = `HTTP ${res.status}`;
+    if (attempt === MAX_RETRIES) return res;
+    // Drain body so the connection can be reused before backing off.
+    await res.text().catch(() => undefined);
+  }
+
+  // Unreachable — keep TS happy.
+  throw new Error(`[comfy/${stage}] retry loop exhausted unexpectedly`);
+}
+
+/**
  * POST the Gemini request body, auto-retrying on transient upstream errors.
  *
- * Why we retry:
- *   comfy.org's Gemini proxy is a thin layer over Google Vertex AI. Any
- *   hiccup between the proxy and Google (DNS blip, rate limit on Google's
- *   side, transient VPC issue) surfaces as 5xx to us. ComfyUI itself
- *   retries these automatically via `_RETRY_STATUS` in client.py — we do
- *   the same so our users don't have to manually re-click Generate.
+ * Retries (via fetchWithRetry):
+ *   - retriable 5xx from comfy.org's Vertex AI proxy
+ *   - network errors thrown by fetch() (ECONNRESET, "fetch failed", aborted)
  *
- * What we don't retry:
- *   - 4xx errors (auth, bad request, policy) — these won't improve
- *   - Network errors from our side — fetch() throws those, handled above
+ * Does NOT retry:
+ *   - 4xx (auth, bad request, policy violations)
  */
 async function postGeminiWithRetry(
   endpoint: string,
   body: GeminiImageGenerateContentRequest
 ): Promise<GeminiGenerateContentResponse> {
   const serializedBody = JSON.stringify(body);
-  const headers = authHeaders({
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  });
-
-  let delay = INITIAL_RETRY_DELAY_MS;
-  let lastStatus = 0;
-  let lastBodyText = "";
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      console.warn(
-        `[comfy provider] retry ${attempt}/${MAX_RETRIES} after ${delay}ms (previous status ${lastStatus})`
-      );
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS);
-    }
-
-    const res = await fetch(endpoint, {
+  const stage = `gemini bodySize=${Math.round(serializedBody.length / 1024)}KB`;
+  const t0 = Date.now();
+  const res = await fetchWithRetry(stage, () =>
+    fetch(endpoint, {
       method: "POST",
-      headers,
+      headers: authHeaders({
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      }),
       body: serializedBody,
       cache: "no-store",
-    });
+    })
+  );
 
-    if (res.ok) {
-      return (await res.json()) as GeminiGenerateContentResponse;
-    }
-
-    // Read body text once so we can either throw with it or log it on retry
-    lastStatus = res.status;
-    lastBodyText = await res.text().catch(() => "");
-
-    // Non-retriable status — throw immediately with friendly message
-    if (!RETRIABLE_STATUSES.has(res.status)) {
-      throw new Error(
-        `Comfy Gemini proxy error (${res.status}): ${friendlyHttpError(res.status, lastBodyText)}`
-      );
-    }
-
-    // Retriable but we're out of attempts — throw
-    if (attempt === MAX_RETRIES) {
-      throw new Error(
-        `Comfy Gemini proxy error (${res.status}): ${friendlyHttpError(res.status, lastBodyText)}`
-      );
-    }
-
-    // Otherwise loop continues, backing off first
+  if (res.ok) {
+    console.log(`[comfy/${stage}] succeeded in ${Date.now() - t0}ms`);
+    return (await res.json()) as GeminiGenerateContentResponse;
   }
 
-  // Unreachable (loop always returns or throws) — keep TS happy
+  const bodyText = await res.text().catch(() => "");
   throw new Error(
-    `Comfy Gemini proxy error (${lastStatus}): ${friendlyHttpError(lastStatus, lastBodyText)}`
+    `Comfy Gemini proxy error (${res.status}): ${friendlyHttpError(res.status, bodyText)}`
   );
 }
 
@@ -825,16 +865,17 @@ async function submitSeedream(input: EditInput): Promise<SubmitResult> {
     throw new Error("BytePlus returned no images");
   }
 
-  // Download each output (URL or b64) and save locally under public/generated/.
+  // Download each output (URL or b64) and save locally under the user's
+  // history image subtree (<email>/<YYYY>/<MM>/<uuid>.<ext>).
   const savedUrls: string[] = [];
   for (const item of data.data) {
     try {
       let saved;
       if (item.url) {
-        saved = await downloadAndSave(item.url, "png");
+        saved = await downloadAndSave(item.url, input.userEmail, "png");
       } else if (item.b64_json) {
         const buffer = Buffer.from(item.b64_json, "base64");
-        saved = await saveBinary(buffer, "png");
+        saved = await saveBinary(buffer, "png", input.userEmail);
       } else {
         continue;
       }
@@ -924,8 +965,9 @@ export const comfyProvider: Provider = {
     // Step 4: extract images from response
     const outputImages = extractOutputImages(data);
 
-    // Step 5: save each output locally under public/generated/
-    // Gemini returns PNG by default (matches our imageOutputOptions.mimeType).
+    // Step 5: save each output locally under the user's history image
+    // subtree (<email>/<YYYY>/<MM>/<uuid>.<ext>). Gemini returns PNG by
+    // default (matches our imageOutputOptions.mimeType).
     const savedUrls: string[] = [];
     for (const img of outputImages) {
       try {
@@ -934,10 +976,10 @@ export const comfyProvider: Provider = {
         if (img.source.type === "inline") {
           // Response inlined the image as base64 — decode and save
           const buffer = Buffer.from(img.source.base64, "base64");
-          saved = await saveBinary(buffer, ext);
+          saved = await saveBinary(buffer, ext, input.userEmail);
         } else {
           // Response pointed to comfy.org storage URL — download and save
-          saved = await downloadAndSave(img.source.fileUri, ext);
+          saved = await downloadAndSave(img.source.fileUri, input.userEmail, ext);
         }
         savedUrls.push(saved.publicUrl);
       } catch (err) {

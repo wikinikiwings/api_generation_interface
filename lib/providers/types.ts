@@ -47,6 +47,12 @@ export interface EditInput {
    *  seedream's API has no aspect_ratio field at all — it requires explicit
    *  W*H pixels — so the client must compute and ship the source ratio. */
   sourceAspectRatio?: number;
+  /** Owner's email. Server-populated from the authenticated session in
+   *  /api/generate/submit; providers use it to write transient output
+   *  files into `<HISTORY_IMAGES_DIR>/<email>/<YYYY>/<MM>/<uuid>.<ext>`,
+   *  matching the layout that the [...path] image route requires. The
+   *  client never sends this — see GenerateSubmitBody (Omit-ted). */
+  userEmail: string;
 }
 
 /**
@@ -112,7 +118,8 @@ export interface GenerateStatusResponse {
   error: string | null;
 }
 
-/** Request body for POST /api/generate/submit */
-export interface GenerateSubmitBody extends EditInput {
+/** Request body for POST /api/generate/submit. Client cannot supply
+ *  `userEmail` — the server fills it from the authenticated session. */
+export interface GenerateSubmitBody extends Omit<EditInput, "userEmail"> {
   provider: ProviderId;
 }
