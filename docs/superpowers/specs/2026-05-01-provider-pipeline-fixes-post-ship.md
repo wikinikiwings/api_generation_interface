@@ -12,6 +12,7 @@
 - [Fix 2 — Sync-provider output broken by OAuth path layout](#fix-2--sync-provider-output-broken-by-oauth-path-layout)
 - [Fix 3 — Polling timeout removed for slow Wavespeed generations](#fix-3--polling-timeout-removed-for-slow-wavespeed-generations)
 - [Fix 4 — Theme toggle moved into Настройки sidebar](#fix-4--theme-toggle-moved-into-настройки-sidebar)
+- [Fix 5 — Picker-order sort consolidated, applied to admin Models tab](#fix-5--picker-order-sort-consolidated-applied-to-admin-models-tab)
 - [File map](#file-map)
 - [Open follow-ups](#open-follow-ups)
 - [Pitfalls — easy ways to re-break things](#pitfalls--easy-ways-to-re-break-things)
@@ -223,6 +224,63 @@ The toggle is now reachable **only when the sidebar is open**. Users who keep th
 
 ---
 
+## Fix 5 — Picker-order sort consolidated, applied to admin Models tab
+
+### Symptom
+
+Admin panel → Модели tab listed models in alphabetical order by `model_id` (`nano-banana`, `nano-banana-2`, `nano-banana-pro`, `seedream-4-5`, `seedream-5-0-lite`) — driven by the API's `ORDER BY m.model_id`. The playground's model picker on the left uses **declaration order** in `MODELS_META` (`nano-banana-pro` → `nano-banana-2` → `nano-banana` → seedream …), which is the deliberate "best/recommended first" ordering. The disagreement was visible to anyone toggling between the picker and admin views.
+
+### Root cause and the bigger problem
+
+`MyQuotasTab` and the expanded admin user-quotas table already sorted by picker order using a 7-line inline pattern:
+
+```ts
+const idx = new Map<string, number>();
+listAllModels().forEach((m, i) => idx.set(m.id, i));
+const sorted = [...rows].sort((a, b) => {
+  const ai = idx.get(a.model_id);
+  const bi = idx.get(b.model_id);
+  if (ai !== undefined && bi !== undefined) return ai - bi;
+  if (ai !== undefined) return -1;
+  if (bi !== undefined) return 1;
+  return a.display_name.localeCompare(b.display_name);
+});
+```
+
+The Admin Models tab was added later and skipped this pattern entirely. The user has now asked for picker-order sort across model-listing UIs four times in separate sessions — clear signal that copy-pasting the sort wasn't working.
+
+### Fix
+
+Extracted a single helper into `lib/providers/models.ts`:
+
+```ts
+export function sortByPickerOrder<T>(
+  items: T[],
+  getModelId: (item: T) => string,
+  getFallbackLabel: (item: T) => string = getModelId
+): T[]
+```
+
+Replaced the three call sites:
+
+```ts
+// components/my-quotas-tab.tsx, components/admin/users-tab.tsx
+const sorted = sortByPickerOrder(rows, (r) => r.model_id, (r) => r.display_name);
+
+// components/admin/models-tab.tsx (NEW use site — fixes the original bug)
+{sortByPickerOrder(models, (m) => m.model_id, (m) => m.display_name).map((m) => ...)}
+```
+
+Server-side ordering deliberately not changed: `/api/admin/models` still returns `ORDER BY m.model_id`, and that's correct — picker order is a frontend concept (TypeScript declaration order in `MODELS_META`) and replicating it on the server would mean two sources of truth that drift.
+
+### Invariant going forward
+
+> **Any UI surface listing models per-row must call `sortByPickerOrder` from `@/lib/providers/models`. Do not copy-paste the inline sort. If you reach for `listAllModels().forEach((m, i) => ...)` in a UI component, you're reaching for the wrong primitive.**
+
+The user-memory feedback file `feedback_picker_model_order.md` is updated to point at the helper. The originally-planned future surfaces (analytics, per-model leaderboards) should use the same helper out of the box.
+
+---
+
 ## File map
 
 ```
@@ -242,10 +300,16 @@ app/api/
   history/route.ts          ← POST returns per-segment-encoded URLs
 
 components/
-  generate-form.tsx ← pollUntilDone is while(true) with cancel/error escapes,
-                       status-transition logging
-  playground.tsx    ← form-card header dropped ThemeToggle
-  history-sidebar.tsx ← Настройки header gained ThemeToggle on the right
+  generate-form.tsx     ← pollUntilDone is while(true) with cancel/error escapes,
+                           status-transition logging
+  playground.tsx        ← form-card header dropped ThemeToggle
+  history-sidebar.tsx   ← Настройки header gained ThemeToggle on the right
+  my-quotas-tab.tsx     ← uses sortByPickerOrder
+  admin/users-tab.tsx   ← uses sortByPickerOrder
+  admin/models-tab.tsx  ← uses sortByPickerOrder (NEW — fixes alphabetical ordering)
+
+lib/providers/
+  models.ts             ← exports sortByPickerOrder helper
 ```
 
 ---
