@@ -274,6 +274,18 @@ export const wavespeedProvider: Provider = {
     });
 
     const data = await parseOrThrow<WSPredictionResult>(res);
+    // Defensive: WSPredictionResult.status is type-asserted as TaskStatus
+    // but never validated at runtime. If WaveSpeed ever returns a status
+    // string outside our enum (e.g. they add "succeeded" or "queued"),
+    // pollUntilDone would loop forever waiting for "completed"/"failed"
+    // that never come. Warn here so the next occurrence is diagnosable
+    // without re-deriving the bug from polling-timeout symptoms.
+    const KNOWN: TaskStatus[] = ["pending", "processing", "completed", "failed", "cancelled"];
+    if (!KNOWN.includes(data.status)) {
+      console.warn(
+        `[wavespeed] unknown status "${data.status}" for taskId=${taskId} — pollUntilDone will not converge until this is mapped to a known TaskStatus`
+      );
+    }
     return {
       status: data.status,
       outputUrls: data.outputs ?? [],

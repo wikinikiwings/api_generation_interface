@@ -93,7 +93,13 @@ const FORMAT_OPTIONS: { value: OutputFormat; label: string }[] = [
 ];
 
 const POLL_INTERVAL = 1500;
-const POLL_TIMEOUT = 5 * 60 * 1000; // 5 min
+// No client-side polling cap. nano-banana-pro on Wavespeed routinely takes
+// 7-8 minutes; an earlier 5-minute ceiling threw "Polling timed out" while
+// the task had already succeeded upstream, leaving an orphan paid-for
+// generation. The OutputCard's Cancel button + AbortController + page
+// unload are the natural stop conditions; any error from the status
+// endpoint also escapes the loop. If a task truly wedges on the provider,
+// the user cancels manually — same UX as before but without false aborts.
 
 /**
  * Module-level registry of in-flight generations keyed by client historyId.
@@ -189,8 +195,10 @@ export function GenerateForm({ styles }: GenerateFormProps) {
 
   /**
    * Poll /api/generate/status/:id?provider=... every POLL_INTERVAL until
-   * the status is "completed" or "failed". Throws on timeout, HTTP error,
-   * or user cancellation.
+   * the status is "completed" or "failed". Throws on HTTP error or user
+   * cancellation. There's no client-side time cap — see POLL_INTERVAL
+   * comment above. Logs status transitions (not every poll) so the
+   * console shows the trajectory without spam on long generations.
    */
   async function pollUntilDone(
     taskId: string,
@@ -198,7 +206,8 @@ export function GenerateForm({ styles }: GenerateFormProps) {
     handle: { cancelled: boolean; controller: AbortController }
   ): Promise<GenerateStatusResponse> {
     const start = Date.now();
-    while (Date.now() - start < POLL_TIMEOUT) {
+    let lastStatus: string | null = null;
+    while (true) {
       if (handle.cancelled) throw new Error("cancelled");
       const res = await fetch(
         `/api/generate/status/${encodeURIComponent(taskId)}?provider=${encodeURIComponent(provider)}`,
@@ -209,12 +218,18 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         throw new Error(body.error || `Status ${res.status}`);
       }
       const data = (await res.json()) as GenerateStatusResponse;
+      if (data.status !== lastStatus) {
+        const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+        console.log(
+          `[poll] taskId=${taskId} provider=${provider} status=${lastStatus ?? "—"} → ${data.status} elapsed=${elapsed}s`
+        );
+        lastStatus = data.status;
+      }
       if (data.status === "completed" || data.status === "failed") {
         return data;
       }
       await new Promise((r) => setTimeout(r, POLL_INTERVAL));
     }
-    throw new Error("Polling timed out");
   }
 
   /**
