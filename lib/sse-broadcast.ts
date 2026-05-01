@@ -22,7 +22,12 @@ export type SseEvent =
   | { type: "generation.deleted"; data: { id: number } }
   | { type: "quota_updated" }
   | { type: "user_banned" }
-  | { type: "user_role_changed" };
+  | { type: "user_role_changed" }
+  // Admin-only fan-out: emitted whenever ANY user successfully creates
+  // a generation. Admins listen to refresh aggregate views (Users tab
+  // counts, Models tab counts) in real time. Carries the originating
+  // user_id so future admin views can target updates if needed.
+  | { type: "admin.user_generated"; data: { user_id: number } };
 
 // Stashed on globalThis so Next.js HMR (dev) and any future module
 // hot-reload path in prod don't wipe the registration table while

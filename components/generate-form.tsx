@@ -683,29 +683,30 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         <Button
           type="submit"
           size="lg"
-          className="w-full"
+          className="w-full justify-between"
           disabled={exhausted}
-          title={exhausted ? "Лимит исчерпан в этом месяце" : undefined}
+          title={
+            exhausted
+              ? "Лимит исчерпан · сбросится 1 числа следующего месяца"
+              : quota?.unlimited
+                ? "Без ограничений"
+                : quota
+                  ? `${quota.used} / ${quota.limit} в этом месяце`
+                  : undefined
+          }
         >
-          <Sparkles />
-          {activeCount > 0
-            ? `Сгенерировать (в работе: ${activeCount})`
-            : "Сгенерировать"}
+          <span className="flex items-center gap-1.5">
+            <Sparkles />
+            {activeCount > 0
+              ? `Сгенерировать (в работе: ${activeCount})`
+              : "Сгенерировать"}
+          </span>
+          {quota && (
+            <span className="text-xs tabular-nums opacity-80">
+              {quota.unlimited ? "∞" : `${quota.used} / ${quota.limit}`}
+            </span>
+          )}
         </Button>
-        {quota && (
-          <div className={`text-xs mt-1 ${
-            quota.unlimited ? "text-zinc-500"
-              : quota.used >= (quota.limit ?? 0) ? "text-red-600"
-              : quota.used / (quota.limit ?? 1) >= 0.8 ? "text-orange-600"
-              : "text-zinc-500"
-          }`}>
-            {quota.unlimited
-              ? "Без ограничений"
-              : quota.used >= (quota.limit ?? 0)
-                ? `Лимит исчерпан · сбросится 1 числа следующего месяца`
-                : `${quota.used} / ${quota.limit} в этом месяце`}
-          </div>
-        )}
       </div>
 
       <PromptPreviewDialog

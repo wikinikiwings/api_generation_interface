@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { History, ChevronRight, Copy, Trash2, SlidersHorizontal, Sparkles } from "lucide-react";
+import { History, ChevronRight, Copy, Trash2, SlidersHorizontal, Sparkles, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ImageDialog } from "@/components/image-dialog";
@@ -114,23 +114,12 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
               size="icon"
               className="h-8 w-8"
               onClick={() => setOpen(false)}
-              aria-label="Close history"
+              aria-label="Закрыть"
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
-            <History className="h-5 w-5" />
-            <span className="font-semibold">История генераций</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant={filtersOpen ? "secondary" : "ghost"}
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setFiltersOpen((v) => !v)}
-              title="Фильтры"
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-            </Button>
+            <Wrench className="h-5 w-5" />
+            <span className="font-semibold">Настройки</span>
           </div>
         </div>
         {/* Tab strip */}
@@ -161,8 +150,27 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
 
         {tab === "history" && (
           <>
+            {/* History-only toolbar: filter toggle (left) + record count
+                (right). Lives inside the history tab so it disappears on
+                the quotas tab where neither applies. */}
+            <div className="flex items-center justify-between px-4 pt-2">
+              <Button
+                variant={filtersOpen ? "secondary" : "ghost"}
+                size="sm"
+                className="h-7 gap-1.5 px-2 text-xs"
+                onClick={() => setFiltersOpen((v) => !v)}
+                title="Фильтры"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                Фильтр
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Записей:{" "}
+                <span className="font-medium text-foreground">{entries.length}</span>
+              </span>
+            </div>
             {filtersOpen && (
-              <div className="space-y-2 px-4 pb-3">
+              <div className="space-y-2 px-4 pb-3 pt-1">
                 <div className="flex items-center gap-2">
                   <label className="w-8 text-xs text-muted-foreground">От</label>
                   <input
@@ -197,17 +205,6 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
                 </Button>
               </div>
             )}
-            <div className="px-4 pb-2 text-xs text-muted-foreground">
-              {username ? (
-                <>
-                  <span className="font-medium text-foreground">{username}</span>
-                  {" · "}Записей:{" "}
-                  <span className="font-medium text-foreground">{entries.length}</span>
-                </>
-              ) : (
-                <span>Никнейм не задан</span>
-              )}
-            </div>
           </>
         )}
       </div>

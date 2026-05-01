@@ -47,6 +47,7 @@ export function Playground() {
   const selectedModel = useSettingsStore((s) => s.selectedModel);
   const setSelectedModel = useSettingsStore((s) => s.setSelectedModel);
   const hydrateUserModel = useSettingsStore((s) => s.hydrateUserModel);
+  const hydrateClient = useSettingsStore((s) => s.hydrateClient);
   const startProviderPolling = useSettingsStore((s) => s.startProviderPolling);
   const reconcileSelectedStyles = useSettingsStore((s) => s.reconcileSelectedStyles);
   const [styles, setStyles] = React.useState<Style[]>([]);
@@ -80,6 +81,16 @@ export function Playground() {
   // consumed inside an effect that already runs on selectedProvider change.
   const adminSwitchRef = React.useRef(false);
 
+  // Pull localStorage-backed picks (selectedModel, selectedStyleIds) into the
+  // store after mount. The store starts with SSR-safe defaults so server
+  // and client render identically; this effect overlays the restored choice
+  // on the next render. Must run BEFORE hydrateUserModel so the server-side
+  // pref can stomp the LS seed (the stomp-guard inside hydrateUserModel
+  // compares the snapshot it took to the current state).
+  React.useEffect(() => {
+    hydrateClient();
+  }, [hydrateClient]);
+
   // Per-user model hydration. Runs once when the authenticated user becomes
   // known (UserProvider has resolved /api/auth/me). The store guards against
   // stomping a click that happens during the in-flight request, so it's safe
@@ -105,15 +116,34 @@ export function Playground() {
     return cleanup;
   }, [startProviderPolling]);
 
-  const { getForModel } = useQuotas();
+  const { getForModel, quotas, loading: quotasLoading } = useQuotas();
 
-  // Filter the visible model options to those supported by the active provider.
+  // Set of model_ids the server says are currently active for this user.
+  // /api/me/quotas filters by `is_active=1`, so flipping that admin
+  // checkbox propagates here automatically (BroadcastChannel("quotas")
+  // → QuotasProvider refetch → this set rebuilds → picker re-renders).
+  const activeModelIds = React.useMemo(
+    () => new Set(quotas.map((q) => q.model_id)),
+    [quotas]
+  );
+
+  // Have we received quotas at least once? Used to defer the is_active
+  // filter on cold start so the picker isn't briefly empty before the
+  // first /api/me/quotas response lands.
+  const haveQuotaData = quotas.length > 0 || !quotasLoading;
+
+  // Filter the visible model options to those supported by the active
+  // provider AND marked active by the admin (is_active=1).
   const modelOptions = React.useMemo(
-    () =>
-      listAllModels()
-        .filter((m) => PROVIDER_MODELS[selectedProvider].includes(m.id))
-        .map((m) => ({ value: m.id, label: m.displayName })),
-    [selectedProvider]
+    () => {
+      let list = listAllModels()
+        .filter((m) => PROVIDER_MODELS[selectedProvider].includes(m.id));
+      if (haveQuotaData) {
+        list = list.filter((m) => activeModelIds.has(m.id));
+      }
+      return list.map((m) => ({ value: m.id, label: m.displayName }));
+    },
+    [selectedProvider, activeModelIds, haveQuotaData]
   );
 
   // Augment model options with quota exhaustion indicators.
@@ -132,42 +162,54 @@ export function Playground() {
     [modelOptions, getForModel]
   );
 
-  // If the user switches provider while their currently-selected model isn't
-  // supported by the new provider (e.g. seedream selected then provider
-  // switches to comfy), snap selectedModel to the first one the new provider
-  // does support. Without this, the API route would 400 on the next submit.
-  // The snapped fallback is also persisted server-side — the user effectively
-  // "chose" this fallback by changing the provider.
+  // Snap selectedModel when it becomes invalid for either reason:
+  //   1. Provider switched and the model isn't in the new provider's set.
+  //   2. Admin disabled (is_active=0) the currently-selected model.
+  // Pick the first model that satisfies BOTH filters so we don't snap
+  // to another disabled/unsupported one.
   //
-  // If the provider change came from the admin (adminSwitchRef.current is
-  // true), surface an extra toast explaining what happened to the model.
+  // For (1) the toast only fires when the change was admin-driven (we
+  // already track that via adminSwitchRef). For (2) the change is by
+  // definition admin-driven, so the toast always fires.
   React.useEffect(() => {
     const supported = PROVIDER_MODELS[selectedProvider];
-    if (!supported.includes(selectedModel)) {
-      const fallback = supported[0];
-      const wasAdminSwitch = adminSwitchRef.current;
-      // Capture display names BEFORE setSelectedModel updates state, so
-      // the toast shows the old model name, not the new one.
-      const allModels = listAllModels();
-      const oldLabel =
-        allModels.find((m) => m.id === selectedModel)?.displayName ?? selectedModel;
-      const newLabel =
-        allModels.find((m) => m.id === fallback)?.displayName ?? fallback;
-      setSelectedModel(fallback);
-      if (wasAdminSwitch) {
-        toast.warning(
-          `Модель «${oldLabel}» недоступна для этого endpoint`,
-          {
-            description: `Вы были автоматически переключены на «${newLabel}».`,
-          }
-        );
+    // Until quota data lands, defer the is_active check to avoid a
+    // false-positive snap on first render.
+    const isActive = !haveQuotaData ? true : activeModelIds.has(selectedModel);
+    const isProviderSupported = supported.includes(selectedModel);
+
+    if (!isProviderSupported || !isActive) {
+      const candidates = haveQuotaData
+        ? supported.filter((id) => activeModelIds.has(id))
+        : [...supported];
+      const fallback = candidates[0];
+      if (fallback && fallback !== selectedModel) {
+        const wasAdminSwitch = adminSwitchRef.current;
+        // Capture display names BEFORE setSelectedModel updates state.
+        const allModels = listAllModels();
+        const oldLabel =
+          allModels.find((m) => m.id === selectedModel)?.displayName ?? selectedModel;
+        const newLabel =
+          allModels.find((m) => m.id === fallback)?.displayName ?? fallback;
+        setSelectedModel(fallback);
+        if (!isProviderSupported && wasAdminSwitch) {
+          toast.warning(
+            `Модель «${oldLabel}» недоступна для этого endpoint`,
+            { description: `Вы были автоматически переключены на «${newLabel}».` }
+          );
+        } else if (!isActive) {
+          toast.warning(
+            `Модель «${oldLabel}» отключена администратором`,
+            { description: `Вы были автоматически переключены на «${newLabel}».` }
+          );
+        }
       }
     }
     // Always reset the flag at the end of the effect, regardless of
     // whether a model swap happened. Otherwise a future user-driven
     // model change could pick up a stale flag.
     adminSwitchRef.current = false;
-  }, [selectedProvider, selectedModel, setSelectedModel]);
+  }, [selectedProvider, selectedModel, setSelectedModel, activeModelIds, haveQuotaData]);
 
   return (
     // The top bar was removed to give the form card more vertical real estate

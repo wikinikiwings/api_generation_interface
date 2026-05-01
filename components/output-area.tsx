@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, AlertCircle, History, ImageIcon, Trash2, X, Download, Copy, Sparkles } from "lucide-react";
+import { Loader2, AlertCircle, History, ImageIcon, Trash2, X, Download, Copy, Sparkles, Wrench } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ImageDialog } from "@/components/image-dialog";
@@ -91,8 +91,8 @@ export function OutputArea({ historyOpen, onToggleHistory, styles }: OutputAreaP
               onClick={onToggleHistory}
               className="bg-background/80 backdrop-blur-sm"
             >
-              <History />
-              История
+              <Wrench />
+              Настройки
             </Button>
           </div>
         )}

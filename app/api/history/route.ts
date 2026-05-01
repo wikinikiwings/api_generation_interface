@@ -200,6 +200,24 @@ export async function POST(request: NextRequest) {
       console.error("[history POST] broadcast failed:", err);
     }
 
+    // Admin-only fan-out: notify every active admin so admin views
+    // (Users tab counts, etc.) can refresh aggregates in real time
+    // without the admin needing to re-focus the page or re-expand a
+    // row. Errors swallowed for the same reason as above.
+    try {
+      const admins = getDb().prepare(
+        `SELECT id FROM users WHERE role='admin' AND status='active'`
+      ).all() as { id: number }[];
+      for (const a of admins) {
+        broadcastToUserId(a.id, {
+          type: "admin.user_generated",
+          data: { user_id: user.id },
+        });
+      }
+    } catch (err) {
+      console.error("[history POST] admin broadcast failed:", err);
+    }
+
     return NextResponse.json({
       id,
       success: true,

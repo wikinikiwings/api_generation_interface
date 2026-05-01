@@ -200,7 +200,7 @@ export function AdminPanel() {
   ];
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 p-6 md:p-10">
+    <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 p-6 md:p-10">
       {/* Header */}
       <header className="flex items-start justify-between gap-4">
         <div>
