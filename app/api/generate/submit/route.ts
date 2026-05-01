@@ -158,7 +158,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    console.error("[/api/generate/submit] error:", message);
+    // Log the full Error (including stack) for server-side diagnostics —
+    // the client still gets only `message` in the JSON response.
+    console.error("[/api/generate/submit] error:", err);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
