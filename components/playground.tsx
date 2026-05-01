@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { GenerateForm } from "@/components/generate-form";
 import { OutputArea } from "@/components/output-area";
 import { HistorySidebar } from "@/components/history-sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { HeaderUserMenu } from "@/components/header-user-menu";
 import { Select } from "@/components/ui/select";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -221,9 +220,10 @@ export function Playground() {
         {/* Left: form */}
         <section className="hidden w-full max-w-[440px] flex-shrink-0 flex-col overflow-hidden rounded-l-xl bg-muted/50 p-4 md:flex">
           <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-border bg-background shadow-md">
-            {/* Card header: model picker + theme toggle.
-                The admin panel lives at /admin but there's no visible link
-                to it — the URL is known only to the owner, and in production
+            {/* Card header: model picker + user menu. Theme toggle moved
+                into the Настройки sidebar header (history-sidebar.tsx). The
+                admin panel lives at /admin but there's no visible link to
+                it — the URL is known only to the owner, and in production
                 Caddy/nginx blocks /admin from public access entirely. */}
             <div className="flex items-center gap-2 border-b border-border px-4 py-3">
               <div className="flex-1">
@@ -235,7 +235,6 @@ export function Playground() {
                   className="h-9"
                 />
               </div>
-              <ThemeToggle />
               <HeaderUserMenu />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5 pb-0">

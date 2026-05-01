@@ -19,6 +19,7 @@ import { BlurUpImage } from "@/components/blur-up-image";
 import { type Style } from "@/lib/styles/types";
 import { applyCopiedPrompt, joinStyleNames } from "@/lib/styles/apply-copied";
 import { MyQuotasTab } from "@/components/my-quotas-tab";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export interface HistorySidebarProps {
   open: boolean;
@@ -121,6 +122,7 @@ export function HistorySidebar({ open, setOpen, className, styles }: HistorySide
             <Wrench className="h-5 w-5" />
             <span className="font-semibold">Настройки</span>
           </div>
+          <ThemeToggle />
         </div>
         {/* Tab strip */}
         <div className="flex border-t border-border">
