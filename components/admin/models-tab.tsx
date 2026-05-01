@@ -2,6 +2,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { Check, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { sortByPickerOrder } from "@/lib/providers/models";
 
 interface AdminModel {
   model_id: string;
@@ -131,7 +132,7 @@ export function ModelsTab() {
         </tr>
       </thead>
       <tbody>
-        {models.map((m) => (
+        {sortByPickerOrder(models, (m) => m.model_id, (m) => m.display_name).map((m) => (
           <tr
             key={m.model_id}
             className="border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-100/40 dark:hover:bg-zinc-900/40"

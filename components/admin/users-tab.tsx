@@ -2,7 +2,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { ChevronRight, ChevronDown } from "lucide-react";
-import { listAllModels } from "@/lib/providers/models";
+import { sortByPickerOrder } from "@/lib/providers/models";
 
 interface AdminUser {
   id: number;
@@ -232,20 +232,8 @@ function UserQuotas({ userId }: { userId: number }) {
 
   if (!rows) return <div className="text-xs">Загрузка…</div>;
 
-  // Sort to match the picker order on the playground (declaration
-  // order in MODELS_META) — same approach as MyQuotasTab. Anything
-  // unknown to the picker (shouldn't happen, defensive) drops to the
-  // bottom alphabetically.
-  const modelOrder = new Map<string, number>();
-  listAllModels().forEach((m, i) => modelOrder.set(m.id, i));
-  const sortedRows = [...rows].sort((a, b) => {
-    const ai = modelOrder.get(a.model_id);
-    const bi = modelOrder.get(b.model_id);
-    if (ai !== undefined && bi !== undefined) return ai - bi;
-    if (ai !== undefined) return -1;
-    if (bi !== undefined) return 1;
-    return a.display_name.localeCompare(b.display_name);
-  });
+  // Match the playground picker order (MODELS_META declaration).
+  const sortedRows = sortByPickerOrder(rows, (r) => r.model_id, (r) => r.display_name);
 
   return (
     <table className="w-full text-xs">

@@ -111,3 +111,37 @@ export function getModelMeta(id: ModelId): ModelMeta {
 export function listAllModels(): ModelMeta[] {
   return Object.values(MODELS_META);
 }
+
+/**
+ * Sort an array of model-bearing items by the playground picker order.
+ * Picker order = declaration order of MODELS_META = what `listAllModels()`
+ * returns. Items whose model_id is unknown to the picker (shouldn't
+ * happen, defensive against stale data or rolled-back migrations) drop
+ * to the bottom and tie-break on `getFallbackLabel` (defaults to model_id).
+ *
+ * Use this for ANY UI listing models per row — sidebar quota cards, admin
+ * user-quotas table, admin Models tab, future analytics. The user has
+ * asked for this consistency repeatedly: every place that lists models
+ * must match what they see in the playground picker on the left.
+ *
+ * Sort happens client-side because picker order is a frontend concept
+ * (TypeScript declaration order in MODELS_META). Do NOT replicate this
+ * order via server `ORDER BY` — duplicating the model list across two
+ * sources of truth invites drift.
+ */
+export function sortByPickerOrder<T>(
+  items: T[],
+  getModelId: (item: T) => string,
+  getFallbackLabel: (item: T) => string = getModelId
+): T[] {
+  const idx = new Map<string, number>();
+  listAllModels().forEach((m, i) => idx.set(m.id, i));
+  return [...items].sort((a, b) => {
+    const ai = idx.get(getModelId(a));
+    const bi = idx.get(getModelId(b));
+    if (ai !== undefined && bi !== undefined) return ai - bi;
+    if (ai !== undefined) return -1;
+    if (bi !== undefined) return 1;
+    return getFallbackLabel(a).localeCompare(getFallbackLabel(b));
+  });
+}

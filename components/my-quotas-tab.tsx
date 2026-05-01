@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useQuotas, type Quota } from "@/app/providers/quotas-provider";
-import { listAllModels } from "@/lib/providers/models";
+import { sortByPickerOrder } from "@/lib/providers/models";
 
 export function MyQuotasTab() {
   // Read from the shared QuotasProvider so optimistic `bumpUsage()` calls
@@ -10,28 +10,13 @@ export function MyQuotasTab() {
   // visibilitychange refresh, and the BC subscription.
   const { quotas, loading } = useQuotas();
 
-  // Match the order the model picker uses on the left side of Playground:
-  // declaration order in MODELS_META (Pro → Flash → original → seedream …).
-  // Anything the picker doesn't know about (shouldn't happen, defensive)
-  // lands at the bottom alphabetically.
-  const modelOrder = React.useMemo(() => {
-    const idx = new Map<string, number>();
-    listAllModels().forEach((m, i) => idx.set(m.id, i));
-    return idx;
-  }, []);
-
   if (loading && quotas.length === 0) {
     return <div className="p-4 text-sm text-muted">Loading...</div>;
   }
 
-  const sorted = [...quotas].sort((a, b) => {
-    const ai = modelOrder.get(a.model_id);
-    const bi = modelOrder.get(b.model_id);
-    if (ai !== undefined && bi !== undefined) return ai - bi;
-    if (ai !== undefined) return -1;
-    if (bi !== undefined) return 1;
-    return a.display_name.localeCompare(b.display_name);
-  });
+  // Match the playground picker order (MODELS_META declaration). The
+  // helper handles fallback for any model_id unknown to the picker.
+  const sorted = sortByPickerOrder(quotas, (q) => q.model_id, (q) => q.display_name);
 
   return (
     <div className="flex flex-col gap-2 p-3">
