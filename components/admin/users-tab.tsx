@@ -230,6 +230,33 @@ function UserQuotas({ userId }: { userId: number }) {
   }, [userId]);
   React.useEffect(() => { void refetch(); }, [refetch]);
 
+  // Cross-tab admin real-time: another admin (or this admin from another
+  // tab) saving an override on this user, OR a model default change, OR
+  // any user posting a generation that affects usage_this_month — all
+  // refetch our rows so values stay live without manual interaction.
+  React.useEffect(() => {
+    if (typeof EventSource === "undefined") return;
+    const es = new EventSource("/api/history/stream");
+    es.addEventListener("admin.quota_changed", (e) => {
+      try {
+        const { user_id } = JSON.parse((e as MessageEvent).data) as { user_id: number };
+        if (user_id === userId || user_id === 0) void refetch();
+      } catch {
+        // Malformed payload — defensive ignore.
+      }
+    });
+    es.addEventListener("admin.user_generated", (e) => {
+      try {
+        const { user_id } = JSON.parse((e as MessageEvent).data) as { user_id: number };
+        if (user_id === userId) void refetch();
+      } catch {
+        // Malformed payload — defensive ignore.
+      }
+    });
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [userId, refetch]);
+
   async function clearOverride(model_id: string) {
     const r = await fetch(`/api/admin/users/${userId}/quotas/${model_id}`, { method: "DELETE" });
     if (r.ok) { toast.success("Сброшено"); void refetch(); } else toast.error("Ошибка");
