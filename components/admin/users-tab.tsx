@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { toast } from "sonner";
-import { ChevronRight, ChevronDown } from "lucide-react";
+import { ChevronRight, ChevronDown, Check, Loader2, Undo2 } from "lucide-react";
 import { sortByPickerOrder } from "@/lib/providers/models";
 import { formatRelativeTime } from "@/lib/format/relative-time";
 
@@ -27,6 +27,8 @@ interface QuotaRow {
   has_override: boolean;
   usage_this_month: number;
 }
+
+type EditorStatus = "synced" | "dirty" | "saving" | "saved";
 
 export function UsersTab() {
   const [users, setUsers] = React.useState<AdminUser[]>([]);
@@ -228,14 +230,6 @@ function UserQuotas({ userId }: { userId: number }) {
   }, [userId]);
   React.useEffect(() => { void refetch(); }, [refetch]);
 
-  async function setOverride(model_id: string, monthly_limit: number | null) {
-    const r = await fetch(`/api/admin/users/${userId}/quotas/${model_id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ monthly_limit }),
-    });
-    if (r.ok) { toast.success("Сохранено"); void refetch(); } else toast.error("Ошибка");
-  }
   async function clearOverride(model_id: string) {
     const r = await fetch(`/api/admin/users/${userId}/quotas/${model_id}`, { method: "DELETE" });
     if (r.ok) { toast.success("Сброшено"); void refetch(); } else toast.error("Ошибка");
@@ -253,103 +247,149 @@ function UserQuotas({ userId }: { userId: number }) {
           <th className="py-1.5 pr-3 text-left font-medium">Модель</th>
           <th className="py-1.5 px-3 text-right font-medium">Лимит</th>
           <th className="py-1.5 px-3 text-center font-medium">Источник</th>
-          <th className="py-1.5 px-3 text-right font-medium">Использовано</th>
-          <th className="py-1.5 pl-3"></th>
+          <th className="py-1.5 pl-3 text-right font-medium">Использовано</th>
         </tr>
       </thead>
       <tbody>
-        {sortedRows.map((r) => <QuotaRowEditor key={r.model_id} row={r} onSave={setOverride} onClear={clearOverride} />)}
+        {sortedRows.map((r) => <QuotaRowEditor key={r.model_id} row={r} userId={userId} onClear={clearOverride} />)}
       </tbody>
     </table>
   );
 }
 
-function QuotaRowEditor({ row, onSave, onClear }: {
+function QuotaRowEditor({ row, userId, onClear }: {
   row: QuotaRow;
-  onSave: (model_id: string, monthly_limit: number | null) => void;
+  userId: number;
   onClear: (model_id: string) => void;
 }) {
-  const [editing, setEditing] = React.useState(false);
   const [val, setVal] = React.useState<string>(row.applicable_limit?.toString() ?? "");
   const [unlimited, setUnlimited] = React.useState(row.applicable_limit === null);
+  const [status, setStatus] = React.useState<EditorStatus>("synced");
+  const savedTimerRef = React.useRef<number | null>(null);
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
 
-  const isOverride = row.source === "override";
+  // Re-sync from props when the row changes (e.g. SSE-driven refetch),
+  // but never stomp an in-progress edit.
+  React.useEffect(() => {
+    if (status === "dirty" || status === "saving") return;
+    setVal(row.applicable_limit?.toString() ?? "");
+    setUnlimited(row.applicable_limit === null);
+  }, [row.applicable_limit, status]);
+
+  React.useEffect(() => () => {
+    if (savedTimerRef.current) window.clearTimeout(savedTimerRef.current);
+  }, []);
+
+  function flashSaved() {
+    setStatus("saved");
+    if (savedTimerRef.current) window.clearTimeout(savedTimerRef.current);
+    savedTimerRef.current = window.setTimeout(() => setStatus("synced"), 1500);
+  }
+
+  async function commit(nextUnlim: boolean, nextRaw: string) {
+    // Empty input + not unlimited = no actionable value. Snap back.
+    if (!nextUnlim && nextRaw.trim() === "") {
+      setVal(row.applicable_limit?.toString() ?? "");
+      setUnlimited(row.applicable_limit === null);
+      setStatus("synced");
+      return;
+    }
+    const next = nextUnlim ? null : Number(nextRaw);
+    // Skip PUT only when the override row already has this exact value —
+    // an admin who types the default value into a row WITHOUT an override
+    // is making the explicit gesture "I want an override" and we honor it.
+    if (row.has_override && next === row.applicable_limit) {
+      setStatus("synced");
+      return;
+    }
+    setStatus("saving");
+    try {
+      const r = await fetch(`/api/admin/users/${userId}/quotas/${row.model_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ monthly_limit: next }),
+      });
+      if (r.ok) flashSaved();
+      else throw new Error("save failed");
+    } catch {
+      toast.error("Ошибка сохранения квоты");
+      setStatus("dirty");
+    }
+  }
 
   return (
     <tr className="border-t border-zinc-100 dark:border-zinc-900 hover:bg-zinc-100/40 dark:hover:bg-zinc-900/40">
       <td className="py-1.5 pr-3">{row.display_name}</td>
-      <td className="py-1.5 px-3 text-right tabular-nums">
-        {editing ? (
-          <span className="inline-flex items-center justify-end gap-2">
+      <td className="py-1.5 px-3 text-right">
+        <span className="inline-flex items-center justify-end gap-2">
+          <input
+            ref={inputRef}
+            type="number"
+            value={val}
+            disabled={unlimited}
+            onChange={(e) => { setVal(e.target.value); setStatus("dirty"); }}
+            onBlur={() => void commit(unlimited, val)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+            }}
+            className="w-20 rounded border px-2 py-0.5 text-right tabular-nums disabled:opacity-40"
+          />
+          <label className="inline-flex items-center gap-1 text-xs">
             <input
-              type="number"
-              value={val}
-              disabled={unlimited}
-              onChange={(e) => setVal(e.target.value)}
-              className="border rounded px-2 py-0.5 w-20 text-right tabular-nums disabled:opacity-40"
+              type="checkbox"
+              checked={unlimited}
+              onChange={(e) => {
+                const nextUnlim = e.target.checked;
+                setUnlimited(nextUnlim);
+                if (nextUnlim) {
+                  void commit(true, val);
+                } else {
+                  setStatus("dirty");
+                  window.requestAnimationFrame(() => inputRef.current?.focus());
+                }
+              }}
             />
-            <label className="inline-flex items-center gap-1 text-xs">
-              <input
-                type="checkbox"
-                checked={unlimited}
-                onChange={(e) => setUnlimited(e.target.checked)}
-              />
-              <span>∞</span>
-            </label>
+            <span>∞</span>
+          </label>
+          {row.has_override && (
+            <button
+              type="button"
+              onClick={() => onClear(row.model_id)}
+              disabled={status === "saving"}
+              title="Сбросить override → default"
+              className="rounded p-0.5 text-zinc-400 hover:text-orange-600 disabled:opacity-30"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <span
+            className="inline-flex h-4 w-4 items-center justify-center"
+            aria-live="polite"
+            aria-label={
+              status === "dirty" ? "не сохранено"
+                : status === "saving" ? "сохраняем"
+                : status === "saved" ? "сохранено"
+                : ""
+            }
+          >
+            {status === "saving" && <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />}
+            {status === "saved" && <Check className="h-3.5 w-3.5 text-green-500" />}
+            {status === "dirty" && <span className="h-2 w-2 rounded-full bg-orange-400" />}
           </span>
-        ) : row.applicable_limit === null ? (
-          "∞"
-        ) : (
-          row.applicable_limit
-        )}
+        </span>
       </td>
       <td className="py-1.5 px-3 text-center">
         <span
           className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium ${
-            isOverride
+            row.source === "override"
               ? "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
               : "text-zinc-400 dark:text-zinc-500"
           }`}
         >
-          {isOverride ? "override" : "default"}
+          {row.source}
         </span>
       </td>
-      <td className="py-1.5 px-3 text-right tabular-nums">{row.usage_this_month}</td>
-      <td className="py-1.5 pl-3 text-right space-x-2 whitespace-nowrap">
-        {editing ? (
-          <>
-            <button
-              onClick={() => { onSave(row.model_id, unlimited ? null : Number(val)); setEditing(false); }}
-              className="text-blue-600 hover:underline"
-            >
-              Сохранить
-            </button>
-            <button
-              onClick={() => setEditing(false)}
-              className="text-zinc-500 hover:underline"
-            >
-              Отмена
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => setEditing(true)}
-              className="text-blue-600 hover:underline"
-            >
-              изменить
-            </button>
-            {row.has_override && (
-              <button
-                onClick={() => onClear(row.model_id)}
-                className="text-orange-600 hover:underline"
-              >
-                сброс
-              </button>
-            )}
-          </>
-        )}
-      </td>
+      <td className="py-1.5 pl-3 text-right tabular-nums">{row.usage_this_month}</td>
     </tr>
   );
 }
