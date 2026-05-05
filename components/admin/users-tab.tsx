@@ -2,7 +2,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { ChevronRight, ChevronDown, Check, Loader2, Undo2 } from "lucide-react";
-import { sortByPickerOrder } from "@/lib/providers/models";
+import { listAllModels, sortByPickerOrder } from "@/lib/providers/models";
 import { formatRelativeTime } from "@/lib/format/relative-time";
 
 interface AdminUser {
@@ -266,10 +266,13 @@ function UserQuotas({ userId }: { userId: number }) {
     if (r.ok) { toast.success("Сброшено"); void refetch(); } else toast.error("Ошибка");
   }
 
-  if (!rows) return <div className="text-xs">Загрузка…</div>;
-
+  // Render the same table shell whether loading or loaded. During fetch we
+  // emit one skeleton row per known model so the row count (and therefore the
+  // panel height) matches what's about to arrive — no layout shift on swap.
   // Match the playground picker order (MODELS_META declaration).
-  const sortedRows = sortByPickerOrder(rows, (r) => r.model_id, (r) => r.display_name);
+  const sortedRows = rows
+    ? sortByPickerOrder(rows, (r) => r.model_id, (r) => r.display_name)
+    : null;
 
   return (
     <table className="w-full text-xs">
@@ -282,9 +285,33 @@ function UserQuotas({ userId }: { userId: number }) {
         </tr>
       </thead>
       <tbody>
-        {sortedRows.map((r) => <QuotaRowEditor key={r.model_id} row={r} userId={userId} onClear={clearOverride} />)}
+        {sortedRows
+          ? sortedRows.map((r) => <QuotaRowEditor key={r.model_id} row={r} userId={userId} onClear={clearOverride} />)
+          : listAllModels().map((m) => <QuotaRowSkeleton key={m.id} displayName={m.displayName} />)}
       </tbody>
     </table>
+  );
+}
+
+function QuotaRowSkeleton({ displayName }: { displayName: string }) {
+  return (
+    <tr className="border-t border-zinc-100 dark:border-zinc-900 animate-pulse">
+      <td className="py-1.5 pr-3 text-zinc-400 dark:text-zinc-600">{displayName}</td>
+      <td className="py-1.5 px-3 text-right">
+        <span className="inline-flex items-center justify-end gap-2">
+          <span className="h-5 w-20 rounded bg-zinc-200/70 dark:bg-zinc-800/70" />
+          <span className="h-3 w-3 rounded bg-zinc-200/70 dark:bg-zinc-800/70" />
+          <span className="inline-flex h-5 w-5" />
+          <span className="inline-flex h-4 w-4" />
+        </span>
+      </td>
+      <td className="py-1.5 px-3 text-center">
+        <span className="inline-block h-3.5 w-12 rounded bg-zinc-200/70 dark:bg-zinc-800/70" />
+      </td>
+      <td className="py-1.5 pl-3 text-right">
+        <span className="inline-block h-3.5 w-6 rounded bg-zinc-200/70 dark:bg-zinc-800/70" />
+      </td>
+    </tr>
   );
 }
 
