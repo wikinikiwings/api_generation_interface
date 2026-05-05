@@ -6,14 +6,20 @@ import { broadcastToUserId } from "@/lib/sse-broadcast";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
 function fanOutQuotaChangedAllUsers(modelId: string) {
-  const admins = getDb().prepare(
-    `SELECT id FROM users WHERE role='admin' AND status='active'`
-  ).all() as { id: number }[];
-  for (const a of admins) {
-    broadcastToUserId(a.id, {
-      type: "admin.quota_changed",
-      data: { user_id: 0, model_id: modelId },
-    });
+  // Errors swallowed: the model PATCH itself already succeeded; a broadcast
+  // failure must not 500 the response. Same pattern as app/api/history POST.
+  try {
+    const admins = getDb().prepare(
+      `SELECT id FROM users WHERE role='admin' AND status='active'`
+    ).all() as { id: number }[];
+    for (const a of admins) {
+      broadcastToUserId(a.id, {
+        type: "admin.quota_changed",
+        data: { user_id: 0, model_id: modelId },
+      });
+    }
+  } catch (err) {
+    console.error("[admin/models] admin broadcast failed:", err);
   }
 }
 
