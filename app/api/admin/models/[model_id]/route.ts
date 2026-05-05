@@ -5,6 +5,18 @@ import { writeAuthEvent } from "@/lib/auth/audit";
 import { broadcastToUserId } from "@/lib/sse-broadcast";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
+function fanOutQuotaChangedAllUsers(modelId: string) {
+  const admins = getDb().prepare(
+    `SELECT id FROM users WHERE role='admin' AND status='active'`
+  ).all() as { id: number }[];
+  for (const a of admins) {
+    broadcastToUserId(a.id, {
+      type: "admin.quota_changed",
+      data: { user_id: 0, model_id: modelId },
+    });
+  }
+}
+
 export const runtime = "nodejs";
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ model_id: string }> }) {
@@ -54,6 +66,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ model_id:
         AND u.id NOT IN (SELECT user_id FROM user_quotas WHERE model_id=?)
     `).all(model_id) as { id: number }[];
     for (const { id } of affected) broadcastToUserId(id, { type: "quota_updated" });
+    fanOutQuotaChangedAllUsers(model_id);
   }
 
   if (activeChanged) {
