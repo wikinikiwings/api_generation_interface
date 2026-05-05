@@ -8,6 +8,7 @@ interface AdminUser {
   id: number;
   email: string;
   name: string | null;
+  picture_url: string | null;
   role: "user" | "admin";
   status: "active" | "banned" | "deleted";
   last_login_at: string | null;

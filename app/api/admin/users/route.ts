@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const a = requireAdmin(req); if (a.error) return a.error;
   const showDeleted = req.nextUrl.searchParams.get("showDeleted") === "1";
   const sql = `
-    SELECT u.id, u.email, u.name, u.role, u.status, u.last_login_at, u.created_at,
+    SELECT u.id, u.email, u.name, u.picture_url, u.role, u.status, u.last_login_at, u.created_at,
       (SELECT COUNT(*) FROM generations g
         WHERE g.user_id = u.id
           AND g.status IN ('completed', 'deleted')
