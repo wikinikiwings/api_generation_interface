@@ -7,6 +7,18 @@ import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 
 export const runtime = "nodejs";
 
+function fanOutQuotaChanged(targetUserId: number, modelId: string) {
+  const admins = getDb().prepare(
+    `SELECT id FROM users WHERE role='admin' AND status='active'`
+  ).all() as { id: number }[];
+  for (const a of admins) {
+    broadcastToUserId(a.id, {
+      type: "admin.quota_changed",
+      data: { user_id: targetUserId, model_id: modelId },
+    });
+  }
+}
+
 export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string; model: string }> }) {
   const me = getCurrentUser(getDb(), req.cookies.get(SESSION_COOKIE_NAME)?.value ?? null);
   if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -34,6 +46,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string;
     details: { target_user_id: userId, model_id: model, monthly_limit: body.monthly_limit },
   });
   broadcastToUserId(userId, { type: "quota_updated" });
+  fanOutQuotaChanged(userId, model);
   return NextResponse.json({ ok: true });
 }
 
@@ -54,6 +67,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
       details: { target_user_id: userId, model_id: model, action: "removed_override" },
     });
     broadcastToUserId(userId, { type: "quota_updated" });
+    fanOutQuotaChanged(userId, model);
   }
   return NextResponse.json({ ok: true, removed: result.changes > 0 });
 }
