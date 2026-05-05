@@ -34,7 +34,7 @@ export function UsersTab() {
   const [users, setUsers] = React.useState<AdminUser[]>([]);
   const [showDeleted, setShowDeleted] = React.useState(false);
   const [newEmail, setNewEmail] = React.useState("");
-  const [expandedId, setExpandedId] = React.useState<number | null>(null);
+  const [expandedIds, setExpandedIds] = React.useState<Set<number>>(() => new Set());
 
   const refetch = React.useCallback(async () => {
     const r = await fetch(`/api/admin/users${showDeleted ? "?showDeleted=1" : ""}`, { cache: "no-store" });
@@ -127,19 +127,23 @@ export function UsersTab() {
         </thead>
         <tbody>
           {users.map((u) => {
-            const expanded = expandedId === u.id;
+            const expanded = expandedIds.has(u.id);
             return (
             <React.Fragment key={u.id}>
               <tr
                 className={`border-t cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-900/40 ${u.status === "deleted" ? "opacity-50" : ""}`}
                 onClick={() => {
-                  const next = expanded ? null : u.id;
-                  setExpandedId(next);
-                  // Refresh outer counts at the same moment the inner
-                  // UserQuotas remounts and pulls fresh data — keeps
-                  // the row header (`Генераций (мес.)`) in sync with
-                  // the per-model `Использовано` numbers below it.
-                  if (next !== null) void refetch();
+                  setExpandedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(u.id)) next.delete(u.id);
+                    else next.add(u.id);
+                    return next;
+                  });
+                  // Refresh outer counts whenever a row is being expanded
+                  // (not collapsed) so the row header `Генераций (мес.)`
+                  // stays in sync with the per-model `Использовано` numbers
+                  // about to render below it.
+                  if (!expanded) void refetch();
                 }}
               >
                 <td className="py-2 pr-1 text-zinc-400" aria-hidden="true">
