@@ -378,17 +378,21 @@ function QuotaRowEditor({ row, userId, onClear }: {
             />
             <span>∞</span>
           </label>
-          {row.has_override && (
-            <button
-              type="button"
-              onClick={() => onClear(row.model_id)}
-              disabled={status === "saving"}
-              title="Сбросить override → default"
-              className="rounded p-0.5 text-zinc-400 hover:text-orange-600 disabled:opacity-30"
-            >
-              <Undo2 className="h-3.5 w-3.5" />
-            </button>
-          )}
+          {/* Fixed slot so the row width never shifts when ↺ appears/disappears
+              (override toggled via save or refetch). */}
+          <span className="inline-flex h-5 w-5 items-center justify-center">
+            {row.has_override && (
+              <button
+                type="button"
+                onClick={() => onClear(row.model_id)}
+                disabled={status === "saving"}
+                title="Сбросить override → default"
+                className="rounded p-0.5 text-zinc-400 hover:text-orange-600 disabled:opacity-30"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </span>
           <span
             className="inline-flex h-4 w-4 items-center justify-center"
             aria-live="polite"
