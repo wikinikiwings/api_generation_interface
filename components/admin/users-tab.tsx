@@ -3,6 +3,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { ChevronRight, ChevronDown } from "lucide-react";
 import { sortByPickerOrder } from "@/lib/providers/models";
+import { formatRelativeTime } from "@/lib/format/relative-time";
 
 interface AdminUser {
   id: number;
@@ -144,11 +145,20 @@ export function UsersTab() {
                     ? <ChevronDown className="h-4 w-4" />
                     : <ChevronRight className="h-4 w-4" />}
                 </td>
-                <td className="py-2">{u.email}</td>
+                <td className="py-2">
+                  <span className="inline-flex items-center gap-2">
+                    <UserAvatar src={u.picture_url} email={u.email} />
+                    <span>{u.email}</span>
+                  </span>
+                </td>
                 <td>{u.name ?? "—"}</td>
                 <td>{u.role}</td>
                 <td>{u.status}</td>
-                <td>{u.last_login_at ?? "—"}</td>
+                <td>
+                  {u.last_login_at
+                    ? <span title={u.last_login_at}>{formatRelativeTime(u.last_login_at)}</span>
+                    : "—"}
+                </td>
                 <td>{u.gens_this_month}</td>
                 <td className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 px-1.5 py-1">
@@ -341,5 +351,32 @@ function QuotaRowEditor({ row, onSave, onClear }: {
         )}
       </td>
     </tr>
+  );
+}
+
+function UserAvatar({ src, email, size = 24 }: {
+  src: string | null;
+  email: string;
+  size?: number;
+}) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt=""
+        width={size}
+        height={size}
+        referrerPolicy="no-referrer"
+        className="rounded-full shrink-0"
+      />
+    );
+  }
+  return (
+    <span
+      style={{ width: size, height: size }}
+      className="rounded-full bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 inline-flex items-center justify-center text-xs font-medium shrink-0"
+    >
+      {email[0]?.toUpperCase() ?? "?"}
+    </span>
   );
 }
