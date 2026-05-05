@@ -27,7 +27,12 @@ export type SseEvent =
   // a generation. Admins listen to refresh aggregate views (Users tab
   // counts, Models tab counts) in real time. Carries the originating
   // user_id so future admin views can target updates if needed.
-  | { type: "admin.user_generated"; data: { user_id: number } };
+  | { type: "admin.user_generated"; data: { user_id: number } }
+  // Admin-only fan-out: emitted on per-user override save/clear and on
+  // model-default change. user_id=0 sentinel = "all users affected"
+  // (model default change). The expanded UserQuotas listens and refetches
+  // when the event matches the user it's currently displaying.
+  | { type: "admin.quota_changed"; data: { user_id: number; model_id: string } };
 
 // Stashed on globalThis so Next.js HMR (dev) and any future module
 // hot-reload path in prod don't wipe the registration table while
