@@ -17,6 +17,7 @@ export type AuthEventType =
   | "admin_user_created"
   | "admin_user_role_changed"
   | "admin_user_status_changed"
+  | "admin_user_purged"
   | "admin_quota_changed"
   | "admin_model_default_changed";
 
