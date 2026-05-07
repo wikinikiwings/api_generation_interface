@@ -32,7 +32,12 @@ export type SseEvent =
   // model-default change. user_id=0 sentinel = "all users affected"
   // (model default change). The expanded UserQuotas listens and refetches
   // when the event matches the user it's currently displaying.
-  | { type: "admin.quota_changed"; data: { user_id: number; model_id: string } };
+  | { type: "admin.quota_changed"; data: { user_id: number; model_id: string } }
+  // Admin-only fan-out: emitted after a user is hard-deleted (purged) by
+  // an admin. Carries the purged user_id so other admin tabs can drop
+  // the row from the table without a full refetch (though they typically
+  // refetch anyway for simplicity).
+  | { type: "admin.user_purged"; data: { user_id: number } };
 
 // Stashed on globalThis so Next.js HMR (dev) and any future module
 // hot-reload path in prod don't wipe the registration table while
