@@ -166,6 +166,7 @@ export async function DELETE(
   writeAuthEvent(getDb(), {
     event_type: "admin_user_purged",
     user_id: me.id,
+    email: purgeResult.email,
     details: {
       target_id: userId,
       target_email: purgeResult.email,
