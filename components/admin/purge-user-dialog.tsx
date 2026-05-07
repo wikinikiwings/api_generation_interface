@@ -67,8 +67,20 @@ export function PurgeUserDialog({ open, onOpenChange, user, onPurged }: PurgeUse
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-background border border-border rounded-lg p-5 shadow-xl">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // Don't allow closing the dialog while a DELETE is in flight — the
+        // user would lose the success/error toast and the row wouldn't
+        // disappear from the table until the SSE refetch arrived.
+        if (submitting && !next) return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        aria-describedby={undefined}
+        className="bg-background border border-border rounded-lg p-5 shadow-xl"
+      >
         <DialogTitle className="flex items-center gap-2 text-red-600">
           <AlertTriangle className="h-5 w-5" />
           Стереть пользователя навсегда
@@ -95,6 +107,12 @@ export function PurgeUserDialog({ open, onOpenChange, user, onPurged }: PurgeUse
               type="text"
               value={typed}
               onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && matches && !submitting) {
+                  e.preventDefault();
+                  void confirm();
+                }
+              }}
               autoFocus
               className="w-full border rounded px-2 py-1 bg-background text-foreground"
               placeholder={user.email}
