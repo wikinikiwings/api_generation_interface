@@ -103,7 +103,12 @@ export async function DELETE(
   if (Number.isNaN(userId)) return NextResponse.json({ error: "invalid_id" }, { status: 400 });
   if (userId === me.id) return NextResponse.json({ error: "self_purge_forbidden" }, { status: 400 });
 
-  const body = (await req.json()) as { confirmation_email?: string };
+  let body: { confirmation_email?: string };
+  try {
+    body = (await req.json()) as { confirmation_email?: string };
+  } catch {
+    return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+  }
   const confirmation = (body.confirmation_email ?? "").trim().toLowerCase();
   if (!confirmation) {
     return NextResponse.json({ error: "confirmation_mismatch" }, { status: 400 });
@@ -138,6 +143,11 @@ export async function DELETE(
   }
 
   // Audit BEFORE the rename so the intent is recorded even if rename fails.
+  // `folder_rename_target` here is PREDICTED (probed via findFreeDeletedTarget
+  // before the rename runs). Under concurrent admin activity targeting the
+  // same `deleted_*` namespace, the actual target may differ — the response
+  // body's `folder_renamed_to` is authoritative for what's on disk. Audit
+  // records intent at the time of the purge.
   // Use details.target_email (no auth_events.email column populated) to mirror
   // the `admin_user_created` pattern at app/api/admin/users/route.ts:47.
   let renameTarget: string | null = null;
