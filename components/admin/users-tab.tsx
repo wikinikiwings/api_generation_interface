@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ChevronRight, ChevronDown, Check, Loader2, Undo2 } from "lucide-react";
 import { listAllModels, sortByPickerOrder } from "@/lib/providers/models";
 import { formatRelativeTime } from "@/lib/format/relative-time";
+import { PurgeUserDialog } from "./purge-user-dialog";
 
 interface AdminUser {
   id: number;
@@ -35,6 +36,7 @@ export function UsersTab() {
   const [showDeleted, setShowDeleted] = React.useState(false);
   const [newEmail, setNewEmail] = React.useState("");
   const [expandedIds, setExpandedIds] = React.useState<Set<number>>(() => new Set());
+  const [purgeTarget, setPurgeTarget] = React.useState<AdminUser | null>(null);
 
   const refetch = React.useCallback(async () => {
     const r = await fetch(`/api/admin/users${showDeleted ? "?showDeleted=1" : ""}`, { cache: "no-store" });
@@ -64,6 +66,7 @@ export function UsersTab() {
     const onEvent = () => void refetch();
     es.addEventListener("admin.user_generated", onEvent);
     es.addEventListener("quota_updated", onEvent);
+    es.addEventListener("admin.user_purged", onEvent);
     es.onerror = () => {
       // No watchdog here — the visibilitychange path already covers
       // the recovery case. Just close to free the slot; will reopen
@@ -193,12 +196,21 @@ export function UsersTab() {
                       </button>
                     )}
                     {u.status === "deleted" ? (
-                      <button
-                        onClick={() => patch(u.id, { status: "active" })}
-                        className="rounded px-2 py-0.5 text-green-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                      >
-                        Восстановить
-                      </button>
+                      <>
+                        <button
+                          onClick={() => patch(u.id, { status: "active" })}
+                          className="rounded px-2 py-0.5 text-green-600 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        >
+                          Восстановить
+                        </button>
+                        <button
+                          onClick={() => setPurgeTarget(u)}
+                          className="rounded px-2 py-0.5 text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                          title="Жёстко стереть — необратимо"
+                        >
+                          Стереть навсегда
+                        </button>
+                      </>
                     ) : (
                       <button
                         onClick={() => confirm(`Удалить ${u.email}?`) && patch(u.id, { status: "deleted" })}
@@ -222,6 +234,12 @@ export function UsersTab() {
           })}
         </tbody>
       </table>
+      <PurgeUserDialog
+        open={purgeTarget !== null}
+        onOpenChange={(o) => { if (!o) setPurgeTarget(null); }}
+        user={purgeTarget ? { id: purgeTarget.id, email: purgeTarget.email, gens_this_month: purgeTarget.gens_this_month } : null}
+        onPurged={() => { setPurgeTarget(null); void refetch(); }}
+      />
     </div>
   );
 }
