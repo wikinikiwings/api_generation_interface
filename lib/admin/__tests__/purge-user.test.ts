@@ -121,4 +121,16 @@ describe("purgeUser", () => {
     // DB untouched
     expect(db.prepare(`SELECT id FROM users WHERE id=?`).get(userId)).toBeTruthy();
   });
+
+  it("generations_deleted reflects actual rows deleted, not billing-counted total", async () => {
+    // SQLite schema has no CHECK on status; we can directly insert a 'failed' row
+    // to simulate a future-state where billing and deletion diverge.
+    insertGen("nano-banana-pro", "2026-05-12T10:00:00.000Z", "completed");
+    insertGen("nano-banana-pro", "2026-05-13T10:00:00.000Z", "failed");
+    return purgeUser(db, userId, { imagesDir, purgedAtIso: "2026-05-07T13:45:00.000Z" })
+      .then((result) => {
+        // 2 rows were physically deleted; only 1 counts toward billing summary.
+        expect(result.generations_deleted).toBe(2);
+      });
+  });
 });

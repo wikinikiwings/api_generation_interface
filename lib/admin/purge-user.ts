@@ -12,6 +12,11 @@ export interface PurgeUserOpts {
 
 export interface PurgeUserResult {
   email: string;
+  /**
+   * Actual number of generation rows deleted by the DB transaction
+   * (not billing-counted). The CSV's `# total_generations` header may be
+   * smaller if non-billing statuses (e.g. 'failed') existed.
+   */
   generations_deleted: number;
   /** True if `_SUMMARY.csv` was written into `{imagesDir}/{email}/`. */
   csv_written: boolean;
@@ -84,16 +89,20 @@ export async function purgeUser(
   // Atomic — RESTRICT on generations.user_id requires we delete
   // child rows first, in this order. The transaction rolls back on any
   // throw; better-sqlite3's .transaction wraps in BEGIN/COMMIT/ROLLBACK.
+  // Returns the actual number of generation rows deleted (may differ from
+  // `total` if non-billing-status rows exist, e.g. 'failed').
+  const tx = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM generation_outputs
+      WHERE generation_id IN (SELECT id FROM generations WHERE user_id=?)
+    `).run(userId);
+    const r = db.prepare(`DELETE FROM generations WHERE user_id=?`).run(userId);
+    db.prepare(`DELETE FROM users WHERE id=?`).run(userId);
+    return r.changes as number;
+  });
+  let actuallyDeleted: number;
   try {
-    const tx = db.transaction(() => {
-      db.prepare(`
-        DELETE FROM generation_outputs
-        WHERE generation_id IN (SELECT id FROM generations WHERE user_id=?)
-      `).run(userId);
-      db.prepare(`DELETE FROM generations WHERE user_id=?`).run(userId);
-      db.prepare(`DELETE FROM users WHERE id=?`).run(userId);
-    });
-    tx();
+    actuallyDeleted = tx();
   } catch (err) {
     throw new PurgeUserError(
       "db_delete_failed",
@@ -103,7 +112,7 @@ export async function purgeUser(
 
   return {
     email: user.email,
-    generations_deleted: total,
+    generations_deleted: actuallyDeleted,
     csv_written: csvWritten,
   };
 }
