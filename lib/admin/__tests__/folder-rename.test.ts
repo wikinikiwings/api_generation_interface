@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { findFreeDeletedTarget, renameUserFolderToDeleted } from "../folder-rename";
+import { findFreeDeletedTarget, renameUserFolderToDeleted, renameWithRetry } from "../folder-rename";
 
 let root: string;
 
@@ -62,5 +62,75 @@ describe("renameUserFolderToDeleted", () => {
     await fs.mkdir(path.join(root, "alice@x.com"));
     const result = await renameUserFolderToDeleted(root, "alice@x.com");
     expect(result).toEqual({ renamed: true, target: "deleted_2_alice@x.com" });
+  });
+});
+
+describe("renameWithRetry", () => {
+  it("succeeds without retry when fs.rename succeeds first time", async () => {
+    const src = path.join(root, "alice@x.com");
+    await fs.mkdir(src);
+    await renameWithRetry(src, path.join(root, "moved"));
+    await expect(fs.access(path.join(root, "moved"))).resolves.toBeUndefined();
+  });
+
+  it("retries on EPERM and eventually succeeds", async () => {
+    const src = path.join(root, "alice@x.com");
+    const dst = path.join(root, "moved");
+    await fs.mkdir(src);
+
+    // Spy on fs.rename: throw EPERM twice, then call through.
+    let calls = 0;
+    const realRename = fs.rename;
+    const spy = vi.spyOn(fs, "rename").mockImplementation(async (s, d) => {
+      calls++;
+      if (calls <= 2) {
+        const err: NodeJS.ErrnoException = new Error("simulated EPERM") as NodeJS.ErrnoException;
+        err.code = "EPERM";
+        throw err;
+      }
+      return realRename.call(fs, s, d);
+    });
+
+    try {
+      await renameWithRetry(src, dst);
+      expect(calls).toBe(3); // 2 failures + 1 success
+      await expect(fs.access(dst)).resolves.toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("throws non-transient errors immediately without retry", async () => {
+    let calls = 0;
+    const spy = vi.spyOn(fs, "rename").mockImplementation(async () => {
+      calls++;
+      const err: NodeJS.ErrnoException = new Error("simulated ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      throw err;
+    });
+
+    try {
+      await expect(renameWithRetry("/nonexistent", "/also-nonexistent")).rejects.toThrow();
+      expect(calls).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("gives up after exhausting retries on persistent EPERM", async () => {
+    let calls = 0;
+    const spy = vi.spyOn(fs, "rename").mockImplementation(async () => {
+      calls++;
+      const err: NodeJS.ErrnoException = new Error("persistent EPERM") as NodeJS.ErrnoException;
+      err.code = "EPERM";
+      throw err;
+    });
+
+    try {
+      await expect(renameWithRetry("/a", "/b")).rejects.toThrow(/persistent EPERM/);
+      expect(calls).toBe(6); // 1 initial + 5 retries
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

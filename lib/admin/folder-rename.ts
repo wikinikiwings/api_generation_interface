@@ -28,6 +28,44 @@ export type RenameResult =
   | { renamed: true; target: string }
   | { renamed: false; reason: "no_source" };
 
+type ErrnoCode = "EPERM" | "EBUSY" | "ENOTEMPTY" | string | undefined;
+
+const TRANSIENT_RENAME_CODES = new Set<string>(["EPERM", "EBUSY", "ENOTEMPTY"]);
+
+const RENAME_BACKOFF_MS = [50, 100, 200, 400, 800];
+
+/**
+ * Wrap fs.rename with retry-on-transient-error. Windows occasionally
+ * holds a directory handle briefly after writes inside the source folder
+ * (file system caches, antivirus, Explorer focus, indexers), causing
+ * EPERM/EBUSY on a rename that would succeed milliseconds later.
+ *
+ * Total retry budget: ~1.55s across 5 retries with exponential backoff.
+ * Non-transient codes (e.g. ENOENT, EACCES) throw immediately.
+ *
+ * Exposed so tests can drive it; production callers go through
+ * `renameUserFolderToDeleted` below.
+ */
+export async function renameWithRetry(src: string, dst: string): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RENAME_BACKOFF_MS.length; attempt++) {
+    try {
+      await fs.rename(src, dst);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const code: ErrnoCode = (err as NodeJS.ErrnoException).code;
+      if (!code || !TRANSIENT_RENAME_CODES.has(code)) {
+        throw err;
+      }
+      const wait = RENAME_BACKOFF_MS[attempt];
+      if (wait === undefined) break; // exhausted retries
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Rename `{imagesDir}/{email}` to `{imagesDir}/{deleted_target}` if the
  * source exists. Returns the chosen target name on success, or
@@ -48,6 +86,6 @@ export async function renameUserFolderToDeleted(
   if (!srcExists) return { renamed: false, reason: "no_source" };
 
   const target = await findFreeDeletedTarget(imagesDir, email);
-  await fs.rename(src, path.join(imagesDir, target));
+  await renameWithRetry(src, path.join(imagesDir, target));
   return { renamed: true, target };
 }
