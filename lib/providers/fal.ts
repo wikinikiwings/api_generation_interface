@@ -5,8 +5,9 @@
 // simple but can hang 30+ seconds on 4K outputs.
 //
 // After Fal returns a result URL (pointing to their storage), we download
-// the binary and save it locally under `public/generated/` via `image-storage`,
-// so the history sidebar shows a stable local URL even if the Fal URL expires.
+// the binary and save it locally via `image-storage` (under
+// HISTORY_IMAGES_DIR/<email>/<YYYY>/<MM>/) so the history sidebar shows a
+// stable local URL even if the Fal URL expires.
 
 import type {
   Provider,

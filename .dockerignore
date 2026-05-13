@@ -14,8 +14,6 @@ build
 out
 *.md
 !README.md
-public/generated/*
-!public/generated/.gitkeep
 Dockerfile
 docker-compose.yml
 .dockerignore

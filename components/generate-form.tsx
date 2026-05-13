@@ -235,7 +235,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
   /**
    * HEAD-probe an output URL to get its byte size for the history sidebar.
    * Silent best-effort — returns undefined if CORS or network blocks it.
-   * For local `/generated/*` URLs this always works (same origin).
+   * For local `/api/history/image/*` URLs this always works (same origin).
    */
   async function fetchOutputSize(url: string): Promise<number | undefined> {
     try {
