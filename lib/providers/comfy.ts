@@ -66,8 +66,6 @@
 
 import type { Provider, EditInput, SubmitResult, ModelId } from "./types";
 import {
-  saveBinary,
-  downloadAndSave,
   extFromContentType,
   normalizeExt,
 } from "@/lib/image-storage";
@@ -865,27 +863,22 @@ async function submitSeedream(input: EditInput): Promise<SubmitResult> {
     throw new Error("BytePlus returned no images");
   }
 
-  // Download each output (URL or b64) and save locally under the user's
-  // history image subtree (<email>/<YYYY>/<MM>/<uuid>.<ext>).
+  // Return each output as a URL the client can fetch — either BytePlus's
+  // own CDN URL or a base64 data URI built from inline bytes. The client
+  // does its own download+variant pipeline and POSTs everything via
+  // /api/history, which is the single on-disk persistence point. Saving
+  // server-side here AND letting the client re-upload caused duplicates
+  // with different UUIDs (the server save was orphaned in the DB).
   const savedUrls: string[] = [];
   for (const item of data.data) {
-    try {
-      let saved;
-      if (item.url) {
-        saved = await downloadAndSave(item.url, input.userEmail, "png");
-      } else if (item.b64_json) {
-        const buffer = Buffer.from(item.b64_json, "base64");
-        saved = await saveBinary(buffer, "png", input.userEmail);
-      } else {
-        continue;
-      }
-      savedUrls.push(saved.publicUrl);
-    } catch (err) {
-      console.error("[comfy/byteplus] failed to save output image:", err);
+    if (item.url) {
+      savedUrls.push(item.url);
+    } else if (item.b64_json) {
+      savedUrls.push(`data:image/png;base64,${item.b64_json}`);
     }
   }
   if (savedUrls.length === 0) {
-    throw new Error("Comfy/BytePlus returned images but all local saves failed");
+    throw new Error("Comfy/BytePlus returned items but none carried a URL or base64 payload");
   }
 
   return {
@@ -965,33 +958,26 @@ export const comfyProvider: Provider = {
     // Step 4: extract images from response
     const outputImages = extractOutputImages(data);
 
-    // Step 5: save each output locally under the user's history image
-    // subtree (<email>/<YYYY>/<MM>/<uuid>.<ext>). Gemini returns PNG by
-    // default (matches our imageOutputOptions.mimeType).
+    // Step 5: return each output as a URL the client will fetch. Inline
+    // base64 becomes a data URI (so the client's createImageVariants can
+    // fetch it via the standard Blob-from-URL path) and external URLs are
+    // returned verbatim. The client uploads the bytes back through
+    // POST /api/history which is now the single on-disk persistence
+    // point — saving server-side here AND letting the client re-upload
+    // caused duplicates with different UUIDs (the server save was
+    // orphaned in the DB).
     const savedUrls: string[] = [];
     for (const img of outputImages) {
-      try {
-        const ext = normalizeExt(extFromContentType(img.mimeType));
-        let saved;
-        if (img.source.type === "inline") {
-          // Response inlined the image as base64 — decode and save
-          const buffer = Buffer.from(img.source.base64, "base64");
-          saved = await saveBinary(buffer, ext, input.userEmail);
-        } else {
-          // Response pointed to comfy.org storage URL — download and save
-          saved = await downloadAndSave(img.source.fileUri, input.userEmail, ext);
-        }
-        savedUrls.push(saved.publicUrl);
-      } catch (err) {
-        console.error(
-          "[comfy provider] failed to save output image locally:",
-          err
-        );
+      const mime = img.mimeType || "image/png";
+      if (img.source.type === "inline") {
+        savedUrls.push(`data:${mime};base64,${img.source.base64}`);
+      } else {
+        savedUrls.push(img.source.fileUri);
       }
     }
 
     if (savedUrls.length === 0) {
-      throw new Error("Comfy returned images but all local saves failed");
+      throw new Error("Comfy returned no usable image outputs");
     }
 
     const executionTimeMs = Date.now() - startTime;
