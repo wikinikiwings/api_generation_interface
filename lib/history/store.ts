@@ -42,9 +42,20 @@ export function rollbackDeletion(id: string): void {
 export function applyServerRow(row: ServerGeneration): void {
   const firstFile = row.outputs[0]?.filepath ?? "";
   const uuid = extractUuid(firstFile) ?? `server-${row.id}`;
+  // Match by either: the entry's id (works when client and server uuids
+  // coincide), the serverGenId (set on confirm), or the uploadUuid (the
+  // on-disk filename uuid, which may differ from the entry's id when the
+  // client reused the provider's server-side uuid — see lib/history-urls
+  // extractServerUuid). The uploadUuid branch closes the
+  // SSE-arrives-before-confirm race for sync providers.
   const existing = useHistoryStore
     .getState()
-    .entries.find((e) => e.id === uuid || e.serverGenId === row.id);
+    .entries.find(
+      (e) =>
+        e.id === uuid ||
+        e.serverGenId === row.id ||
+        (e.uploadUuid !== undefined && e.uploadUuid === uuid)
+    );
 
   if (existing && (existing.state === "deleting" || existing.state === "removed")) {
     debugHistory("applyServerRow.ignored", {

@@ -171,7 +171,12 @@ export function updatePendingEntry(
   patch: Partial<
     Pick<
       HistoryEntry,
-      "thumbUrl" | "previewUrl" | "originalUrl" | "outputUrl" | "localBlobUrls"
+      | "thumbUrl"
+      | "previewUrl"
+      | "originalUrl"
+      | "outputUrl"
+      | "localBlobUrls"
+      | "uploadUuid"
     >
   >
 ): void {

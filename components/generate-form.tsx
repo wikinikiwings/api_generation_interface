@@ -295,6 +295,14 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       // skip the redundant original write — one file on disk per generation.
       // Falls back to the client-generated historyId for non-local URLs.
       const uploadUuid = extractServerUuid(outputUrl) ?? historyId;
+      // Record it on the pending entry so applyServerRow can match the
+      // server SSE/refetch row back to this entry by uuid (the server
+      // derives row.id-uuid from the on-disk filename, which uses
+      // uploadUuid, not historyId). Without this, an SSE event arriving
+      // before the confirmation handler runs inserts a duplicate row.
+      if (uploadUuid !== historyId) {
+        updatePendingEntry(historyId, { uploadUuid });
+      }
 
       const uploadAbort = new AbortController();
 

@@ -34,6 +34,14 @@ export interface HistoryEntry {
   /** Server-side history DB row id. Set on confirmPendingEntry. */
   serverGenId?: number;
 
+  /** Uuid the upload used as the on-disk filename. Equals `id` when the
+   *  client generated a fresh historyId, but differs when extractServerUuid
+   *  matched the provider's local URL — in that case the on-disk and DB
+   *  row reference this uuid while `id` keeps the client historyId.
+   *  Used by applyServerRow to match the server row back to the pending
+   *  entry under the SSE-arrives-before-confirm race. */
+  uploadUuid?: string;
+
   // === Generation metadata ===
   prompt: string;
   /** Clean user-authored part of the prompt (before style wrapping).
