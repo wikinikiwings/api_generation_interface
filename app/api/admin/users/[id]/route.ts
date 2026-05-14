@@ -1,14 +1,12 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { getDb, getHistoryImagesDir } from "@/lib/history-db";
+import { getDb, getHistoryImagesDir, getHistoryVariantsDir } from "@/lib/history-db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { writeAuthEvent } from "@/lib/auth/audit";
 import { deleteSessionsForUser } from "@/lib/auth/session";
 import { broadcastToUserId } from "@/lib/sse-broadcast";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 import { purgeUser, PurgeUserError } from "@/lib/admin/purge-user";
-import { findFreeDeletedTarget, renameUserFolderToDeleted } from "@/lib/admin/folder-rename";
+import { findFreeDeletedTargetAcross, renameUserFolderToTarget } from "@/lib/admin/folder-rename";
 
 function fanOutUserPurged(targetUserId: number) {
   // Errors swallowed: the purge already succeeded; broadcast failure
@@ -143,26 +141,24 @@ export async function DELETE(
   }
 
   // Audit BEFORE the rename so the intent is recorded even if rename fails.
-  // `folder_rename_target` here is PREDICTED (probed via findFreeDeletedTarget
+  // `folder_rename_target` here is PREDICTED (probed via findFreeDeletedTargetAcross
   // before the rename runs). Under concurrent admin activity targeting the
   // same `deleted_*` namespace, the actual target may differ — the response
   // body's `folder_renamed_to` is authoritative for what's on disk. Audit
   // records intent at the time of the purge.
   // Use details.target_email (no auth_events.email column populated) to mirror
   // the `admin_user_created` pattern at app/api/admin/users/route.ts:47.
-  let renameTarget: string | null = null;
-  // Pre-compute target so the audit can record it. If probe fails (e.g.,
-  // imagesDir vanished), we'll find it again during rename — best effort.
-  try {
-    const probe = await fs.access(path.join(imagesDir, purgeResult.email))
-      .then(() => true).catch(() => false);
-    if (probe) {
-      renameTarget = await findFreeDeletedTarget(imagesDir, purgeResult.email);
-    }
-  } catch {
-    // Non-fatal: audit will record a null target, rename below still tries.
-  }
+  const variantsDir = getHistoryVariantsDir();
+  // Predicted target for the audit log — probed across BOTH roots so the
+  // slot we record matches the slot we'll actually try to occupy.
+  const predictedTarget = await findFreeDeletedTargetAcross(
+    [imagesDir, variantsDir],
+    purgeResult.email
+  );
 
+  // Audit-before-rename ordering preserved (see post-ship doc §"Audit-before-rename
+  // ordering rationale"): we want a permanent record of intent even if the
+  // disk side-effect fails. The actual outcome lives in the response body.
   writeAuthEvent(getDb(), {
     event_type: "admin_user_purged",
     user_id: me.id,
@@ -171,32 +167,48 @@ export async function DELETE(
       target_id: userId,
       target_email: purgeResult.email,
       generations_purged: purgeResult.generations_deleted,
-      folder_rename_target: renameTarget,
+      folder_rename_target: predictedTarget,
     },
   });
 
-  let renameOutcome: { renamed: true; target: string } | { renamed: false; reason: "no_source" | "rename_failed"; error?: string };
+  type SideOutcome = "renamed" | "no_source" | "failed";
+  let imagesOutcome: SideOutcome;
+  let variantsOutcome: SideOutcome;
+  let renameError: string | null = null;
   try {
-    renameOutcome = await renameUserFolderToDeleted(imagesDir, purgeResult.email);
+    const imgRes = await renameUserFolderToTarget(imagesDir, purgeResult.email, predictedTarget);
+    imagesOutcome = imgRes.renamed ? "renamed" : imgRes.reason;
   } catch (err) {
-    console.error("[admin/users DELETE] rename failed:", err);
-    renameOutcome = { renamed: false, reason: "rename_failed", error: (err as Error).message };
+    console.error("[admin/users DELETE] images rename failed:", err);
+    imagesOutcome = "failed";
+    renameError = (err as Error).message;
+  }
+  try {
+    const varRes = await renameUserFolderToTarget(variantsDir, purgeResult.email, predictedTarget);
+    variantsOutcome = varRes.renamed ? "renamed" : varRes.reason;
+  } catch (err) {
+    console.error("[admin/users DELETE] variants rename failed:", err);
+    variantsOutcome = "failed";
+    renameError = renameError ?? (err as Error).message;
   }
 
   fanOutUserPurged(userId);
 
+  const anyRenamed = imagesOutcome === "renamed" || variantsOutcome === "renamed";
   const responseBody: Record<string, unknown> = {
     ok: true,
     purged: {
       email: purgeResult.email,
       generations_deleted: purgeResult.generations_deleted,
       summary_csv_written: purgeResult.csv_written,
-      folder_renamed_to: renameOutcome.renamed ? renameOutcome.target : null,
+      folder_renamed_to: anyRenamed ? predictedTarget : null,
+      rename_outcome: { images: imagesOutcome, variants: variantsOutcome },
     },
   };
-  if (!renameOutcome.renamed && renameOutcome.reason === "rename_failed") {
+  if (imagesOutcome === "failed" || variantsOutcome === "failed") {
     responseBody.warning = "rename_failed";
-    responseBody.intended_target = renameTarget;
+    responseBody.intended_target = predictedTarget;
+    if (renameError) responseBody.rename_error = renameError;
   }
   return NextResponse.json(responseBody);
 }
