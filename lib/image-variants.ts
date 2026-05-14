@@ -12,10 +12,16 @@
  * to HTMLCanvasElement on older browsers (notably iOS < 16.4).
  */
 
-const THUMB_WIDTH = 240;
-const THUMB_QUALITY = 0.7;
-const MID_WIDTH = 1200;
-const MID_QUALITY = 0.85;
+import {
+  THUMB_WIDTH,
+  THUMB_QUALITY as THUMB_QUALITY_INT,
+  MID_WIDTH,
+  MID_QUALITY as MID_QUALITY_INT,
+} from "@/lib/image-variants-spec";
+
+// Canvas APIs take a 0..1 float; the shared spec uses a 1..100 int.
+const THUMB_QUALITY = THUMB_QUALITY_INT / 100;
+const MID_QUALITY = MID_QUALITY_INT / 100;
 
 export interface ImageVariants {
   /** 240px JPEG q70. */
