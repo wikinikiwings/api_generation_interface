@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, getHistoryImagesDir } from "@/lib/history-db";
+import { getDb, getHistoryImagesDir, getHistoryVariantsDir } from "@/lib/history-db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -37,7 +37,12 @@ export async function GET(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const dir = getHistoryImagesDir();
+  // Dispatch root by basename prefix: variant filenames (thumb_/mid_)
+  // live in HISTORY_VARIANTS_DIR; originals (UUID-prefixed) live in
+  // HISTORY_IMAGES_DIR. Path-traversal guards above apply to both.
+  const filename = segs[segs.length - 1];
+  const isVariant = filename.startsWith("thumb_") || filename.startsWith("mid_");
+  const dir = isVariant ? getHistoryVariantsDir() : getHistoryImagesDir();
   const filePath = path.join(dir, ...segs);
   const resolved = path.resolve(filePath);
   if (!resolved.startsWith(path.resolve(dir))) {
@@ -46,7 +51,6 @@ export async function GET(
 
   try {
     const bytes = await fs.readFile(resolved);
-    const filename = segs[segs.length - 1];
     const contentType = mime.lookup(filename) || "application/octet-stream";
     return new NextResponse(new Uint8Array(bytes), {
       status: 200,
