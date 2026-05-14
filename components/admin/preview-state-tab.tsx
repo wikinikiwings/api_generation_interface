@@ -40,6 +40,10 @@ export function PreviewStateTab() {
   const [scanning, setScanning] = useState(false);
   const [purgeConfirm, setPurgeConfirm] = useState("");
   const [purging, setPurging] = useState(false);
+  const [orphanScan, setOrphanScan] = useState<{ count: number; files: string[] } | null>(null);
+  const [orphanScanning, setOrphanScanning] = useState(false);
+  const [orphanConfirm, setOrphanConfirm] = useState("");
+  const [orphanPurging, setOrphanPurging] = useState(false);
   const [activeJob, setActiveJob] = useState<JobState | null>(null);
   const [filter, setFilter] = useState("");
 
@@ -114,6 +118,34 @@ export function PreviewStateTab() {
         toast.error("Ошибка очистки");
       }
     } finally { setPurging(false); }
+  };
+
+  const doOrphanScan = async () => {
+    setOrphanScanning(true);
+    try {
+      const r = await fetch("/api/admin/variants/orphan-scan");
+      if (r.ok) setOrphanScan(await r.json());
+    } finally { setOrphanScanning(false); }
+  };
+
+  const doOrphanPurge = async () => {
+    if (orphanConfirm !== "УДАЛИТЬ") {
+      toast.error("Введите УДАЛИТЬ для подтверждения");
+      return;
+    }
+    setOrphanPurging(true);
+    try {
+      const r = await fetch("/api/admin/variants/orphan-purge", { method: "POST" });
+      if (r.ok) {
+        const data = await r.json();
+        toast.success(`Удалено орфанов: ${data.deleted}`);
+        setOrphanScan(null);
+        setOrphanConfirm("");
+        reloadStats();
+      } else {
+        toast.error("Ошибка очистки");
+      }
+    } finally { setOrphanPurging(false); }
   };
 
   const startRebuildUser = async (userId: number, email: string) => {
@@ -193,6 +225,36 @@ export function PreviewStateTab() {
             <button onClick={doPurge} disabled={purging || purgeConfirm !== "УДАЛИТЬ" || jobRunning}
               className="px-3 py-1.5 rounded border border-destructive text-destructive text-sm disabled:opacity-50">
               Удалить старые
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-md border p-4">
+        <h2 className="text-base font-semibold mb-1">Удаление орфан-оригиналов</h2>
+        <p className="text-sm text-muted-foreground mb-3">
+          Удалит <code>&lt;uuid&gt;.&lt;ext&gt;</code> файлы из папок пользователей, на которые
+          не ссылается ни одна строка в БД. Это исторические дубли от sync-провайдеров
+          (Fal/Comfy), накопленные до текущего исправления. <code>deleted_*/</code> архивы
+          и пользовательские нестандартные файлы не трогаются.
+        </p>
+        <div className="flex items-center gap-2 mb-2">
+          <button onClick={doOrphanScan} disabled={orphanScanning || jobRunning}
+            className="px-3 py-1.5 rounded border text-sm">
+            {orphanScanning ? "Сканирование..." : "Сканировать"}
+          </button>
+          {orphanScan && (
+            <span className="text-sm">найдено {orphanScan.count} орфанов</span>
+          )}
+        </div>
+        {orphanScan && orphanScan.count > 0 && (
+          <div className="flex items-center gap-2">
+            <input type="text" value={orphanConfirm} onChange={(e) => setOrphanConfirm(e.target.value)}
+              placeholder='Введите "УДАЛИТЬ"'
+              className="px-2 py-1 rounded border text-sm bg-background text-foreground" />
+            <button onClick={doOrphanPurge} disabled={orphanPurging || orphanConfirm !== "УДАЛИТЬ" || jobRunning}
+              className="px-3 py-1.5 rounded border border-destructive text-destructive text-sm disabled:opacity-50">
+              Удалить орфанов
             </button>
           </div>
         )}
