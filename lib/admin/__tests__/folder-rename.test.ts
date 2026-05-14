@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { findFreeDeletedTarget, renameUserFolderToDeleted, renameWithRetry } from "../folder-rename";
+import { findFreeDeletedTargetAcross, renameUserFolderToTarget } from "../folder-rename";
 
 let root: string;
 
@@ -131,6 +132,58 @@ describe("renameWithRetry", () => {
       expect(calls).toBe(6); // 1 initial + 5 retries
     } finally {
       spy.mockRestore();
+    }
+  });
+});
+
+describe("findFreeDeletedTargetAcross", () => {
+  it("returns deleted_{email} when both dirs are empty", async () => {
+    const d1 = await fs.mkdtemp(path.join(os.tmpdir(), "two-a-"));
+    const d2 = await fs.mkdtemp(path.join(os.tmpdir(), "two-b-"));
+    try {
+      const t = await findFreeDeletedTargetAcross([d1, d2], "alice@x.com");
+      expect(t).toBe("deleted_alice@x.com");
+    } finally {
+      await fs.rm(d1, { recursive: true, force: true });
+      await fs.rm(d2, { recursive: true, force: true });
+    }
+  });
+
+  it("picks deleted_3 when first dir has 1, second has 2", async () => {
+    const d1 = await fs.mkdtemp(path.join(os.tmpdir(), "two-a-"));
+    const d2 = await fs.mkdtemp(path.join(os.tmpdir(), "two-b-"));
+    try {
+      await fs.mkdir(path.join(d1, "deleted_alice@x.com"));
+      await fs.mkdir(path.join(d2, "deleted_2_alice@x.com"));
+      const t = await findFreeDeletedTargetAcross([d1, d2], "alice@x.com");
+      expect(t).toBe("deleted_3_alice@x.com");
+    } finally {
+      await fs.rm(d1, { recursive: true, force: true });
+      await fs.rm(d2, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("renameUserFolderToTarget", () => {
+  it("renames {email}/ to the given target name", async () => {
+    const d = await fs.mkdtemp(path.join(os.tmpdir(), "rt-"));
+    try {
+      await fs.mkdir(path.join(d, "alice@x.com"));
+      const r = await renameUserFolderToTarget(d, "alice@x.com", "deleted_2_alice@x.com");
+      expect(r).toEqual({ renamed: true, target: "deleted_2_alice@x.com" });
+      await expect(fs.access(path.join(d, "deleted_2_alice@x.com"))).resolves.toBeUndefined();
+    } finally {
+      await fs.rm(d, { recursive: true, force: true });
+    }
+  });
+
+  it("returns no_source when {email}/ does not exist", async () => {
+    const d = await fs.mkdtemp(path.join(os.tmpdir(), "rt-"));
+    try {
+      const r = await renameUserFolderToTarget(d, "ghost@x.com", "deleted_ghost@x.com");
+      expect(r).toEqual({ renamed: false, reason: "no_source" });
+    } finally {
+      await fs.rm(d, { recursive: true, force: true });
     }
   });
 });

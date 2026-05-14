@@ -89,3 +89,48 @@ export async function renameUserFolderToDeleted(
   await renameWithRetry(src, path.join(imagesDir, target));
   return { renamed: true, target };
 }
+
+/**
+ * Like `findFreeDeletedTarget` but probes the same slot across all given
+ * dirs and returns the lowest index that is free in EVERY dir. Used by
+ * hard-delete so that the user's images and variants archives end up at
+ * the same on-disk name even if prior purges left different slot patterns
+ * in each dir.
+ */
+export async function findFreeDeletedTargetAcross(
+  dirs: string[],
+  email: string
+): Promise<string> {
+  let n = 1;
+  while (true) {
+    const candidate =
+      n === 1 ? `deleted_${email}` : `deleted_${n}_${email}`;
+    const occupied = await Promise.all(
+      dirs.map((d) =>
+        fs.access(path.join(d, candidate)).then(() => true).catch(() => false)
+      )
+    );
+    if (!occupied.some((x) => x)) return candidate;
+    n++;
+  }
+}
+
+/**
+ * Like `renameUserFolderToDeleted` but uses an externally chosen target
+ * name. Paired with `findFreeDeletedTargetAcross` so both calls land at
+ * the same slot.
+ */
+export async function renameUserFolderToTarget(
+  dir: string,
+  email: string,
+  target: string
+): Promise<RenameResult> {
+  const src = path.join(dir, email);
+  const srcExists = await fs
+    .access(src)
+    .then(() => true)
+    .catch(() => false);
+  if (!srcExists) return { renamed: false, reason: "no_source" };
+  await renameWithRetry(src, path.join(dir, target));
+  return { renamed: true, target };
+}
