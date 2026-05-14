@@ -37,7 +37,14 @@ export type SseEvent =
   // an admin. Carries the purged user_id so other admin tabs can drop
   // the row from the table without a full refetch (though they typically
   // refetch anyway for simplicity).
-  | { type: "admin.user_purged"; data: { user_id: number } };
+  | { type: "admin.user_purged"; data: { user_id: number } }
+  // Admin-only: progress ticks during a variants rebuild job. Throttled
+  // server-side (~1/sec) so receivers don't drown in tiny updates.
+  | { type: "admin.variants_rebuild_progress";
+      data: { jobId: string; done: number; total: number; currentEmail?: string; errors: number } }
+  // Admin-only: emitted once when a job transitions to finished=true.
+  | { type: "admin.variants_rebuild_done";
+      data: { jobId: string; total: number; errors: number } };
 
 // Stashed on globalThis so Next.js HMR (dev) and any future module
 // hot-reload path in prod don't wipe the registration table while
