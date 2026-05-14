@@ -5,6 +5,7 @@ import {
   getGenerations,
   deleteGeneration,
   getHistoryImagesDir,
+  getHistoryVariantsDir,
   getGenerationById,
 } from "@/lib/history-db";
 import { getCurrentUser } from "@/lib/auth/current-user";
@@ -120,17 +121,21 @@ export async function POST(request: NextRequest) {
     const yyyy = String(now.getUTCFullYear());
     const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
     const relDir = `${user.email}/${yyyy}/${mm}`;
-    const absDir = path.join(getHistoryImagesDir(), relDir);
-    await fs.mkdir(absDir, { recursive: true });
+    const imagesAbsDir = path.join(getHistoryImagesDir(), relDir);
+    const variantsAbsDir = path.join(getHistoryVariantsDir(), relDir);
+    await Promise.all([
+      fs.mkdir(imagesAbsDir, { recursive: true }),
+      fs.mkdir(variantsAbsDir, { recursive: true }),
+    ]);
 
     const ext = path.extname(original.name) || getExtFromMime(original.type);
     const originalFilename = `${uuid}${ext}`;
     const thumbFilename = `thumb_${uuid}.jpg`;
     const midFilename = `mid_${uuid}.jpg`;
 
-    const originalPath = path.join(absDir, originalFilename);
-    const thumbPath = path.join(absDir, thumbFilename);
-    const midPath = path.join(absDir, midFilename);
+    const originalPath = path.join(imagesAbsDir, originalFilename);
+    const thumbPath = path.join(variantsAbsDir, thumbFilename);
+    const midPath = path.join(variantsAbsDir, midFilename);
 
     // Uuid collision check — if any of the three files already exists,
     // refuse to overwrite. Client treats 409 as a bug and retries with
