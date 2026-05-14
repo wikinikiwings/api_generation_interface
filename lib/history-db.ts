@@ -19,10 +19,15 @@ const DATA_DIR = process.env.HISTORY_DATA_DIR
 
 const DB_PATH = path.join(DATA_DIR, "history.db");
 const HISTORY_IMAGES_DIR = path.join(DATA_DIR, "history_images");
+const HISTORY_VARIANTS_DIR = process.env.HISTORY_VARIANTS_DIR
+  ? path.resolve(process.env.HISTORY_VARIANTS_DIR)
+  : path.join(DATA_DIR, "history_variants");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(HISTORY_IMAGES_DIR))
   fs.mkdirSync(HISTORY_IMAGES_DIR, { recursive: true });
+if (!fs.existsSync(HISTORY_VARIANTS_DIR))
+  fs.mkdirSync(HISTORY_VARIANTS_DIR, { recursive: true });
 
 let _db: Database.Database | null = null;
 
@@ -379,6 +384,10 @@ export function deleteGeneration(
 
 export function getHistoryImagesDir(): string {
   return HISTORY_IMAGES_DIR;
+}
+
+export function getHistoryVariantsDir(): string {
+  return HISTORY_VARIANTS_DIR;
 }
 
 export function getDataDir(): string {
