@@ -16,6 +16,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { StylesSection } from "@/components/admin/styles-section";
 import { UsersTab } from "@/components/admin/users-tab";
 import { ModelsTab } from "@/components/admin/models-tab";
+import { PreviewStateTab } from "@/components/admin/preview-state-tab";
 import type { ProviderId } from "@/lib/providers/types";
 import type { ProviderMeta } from "@/lib/providers/registry";
 
@@ -40,7 +41,7 @@ export function AdminPanel() {
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [loggingOut, setLoggingOut] = React.useState(false);
-  const [activeTab, setActiveTab] = React.useState<"settings" | "styles" | "users" | "models">("settings");
+  const [activeTab, setActiveTab] = React.useState<"settings" | "styles" | "users" | "models" | "preview-state">("settings");
 
   // Fetch provider metadata on mount
   React.useEffect(() => {
@@ -192,11 +193,12 @@ export function AdminPanel() {
     );
   }
 
-  const tabs: { key: "settings" | "styles" | "users" | "models"; label: string }[] = [
+  const tabs: { key: "settings" | "styles" | "users" | "models" | "preview-state"; label: string }[] = [
     { key: "settings", label: "Settings" },
     { key: "styles", label: "Styles" },
     { key: "users", label: "Users" },
     { key: "models", label: "Модели" },
+    { key: "preview-state", label: "Превью / History" },
   ];
 
   return (
@@ -256,6 +258,7 @@ export function AdminPanel() {
       {activeTab === "styles" && <StylesSection />}
       {activeTab === "users" && <UsersTab />}
       {activeTab === "models" && <ModelsTab />}
+      {activeTab === "preview-state" && <PreviewStateTab />}
     </div>
   );
 }
