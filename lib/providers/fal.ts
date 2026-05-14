@@ -15,7 +15,6 @@ import type {
   SubmitResult,
   ModelId,
 } from "./types";
-import { downloadAndSave } from "@/lib/image-storage";
 
 // Per-model routing tables. Local to provider (no models.ts import).
 const FAL_MODEL_SLUG_BY_ID: Partial<Record<ModelId, string>> = {
@@ -273,29 +272,16 @@ export const falProvider: Provider = {
       throw new Error("Fal.ai returned no images");
     }
 
-    // Download each output image from Fal's storage and save locally.
-    // Sequential to keep disk I/O predictable and errors attributable.
-    const savedUrls: string[] = [];
-    for (const img of data.images) {
-      try {
-        const saved = await downloadAndSave(img.url, input.userEmail, input.outputFormat);
-        savedUrls.push(saved.publicUrl);
-      } catch (err) {
-        console.error(
-          "[fal provider] failed to cache image locally:",
-          img.url,
-          err
-        );
-        // Fallback: use the remote URL directly. Client will still render it
-        // (Fal URLs are publicly accessible at least for a while).
-        savedUrls.push(img.url);
-      }
-    }
-
+    // Return Fal's URLs directly — the client downloads them (to generate
+    // thumb/mid variants in the browser), then uploads the bytes via
+    // POST /api/history which becomes the single on-disk persistence point.
+    // Saving server-side here AND letting the client re-upload caused two
+    // copies of every original under different UUIDs (the server save was
+    // orphaned in the DB).
     const executionTimeMs = Date.now() - startTime;
     return {
       kind: "sync",
-      outputUrls: savedUrls,
+      outputUrls: data.images.map((img) => img.url),
       executionTimeMs,
     };
   },
