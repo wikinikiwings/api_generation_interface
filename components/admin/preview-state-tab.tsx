@@ -23,6 +23,12 @@ interface JobState {
   total: number;
   done: number;
   errors: Array<{ generationId: number; reason: string; error?: string }>;
+  /**
+   * Live error count from SSE progress events. The `errors` array above is
+   * the detailed list — only populated by the final `done` poll (or future
+   * polling). Mid-job, `errorCount` is the authoritative count.
+   */
+  errorCount: number;
   finished: boolean;
   currentEmail?: string;
 }
@@ -63,21 +69,24 @@ export function PreviewStateTab() {
       try {
         const data = JSON.parse(e.data);
         setActiveJob((prev) => prev && prev.jobId === data.jobId
-          ? { ...prev, done: data.done, total: data.total, currentEmail: data.currentEmail, errors: prev.errors }
+          ? { ...prev, done: data.done, total: data.total, currentEmail: data.currentEmail, errorCount: data.errors }
           : prev);
       } catch { /* ignore */ }
     };
     const onDone = (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
-        setActiveJob((prev) => prev && prev.jobId === data.jobId ? { ...prev, finished: true } : prev);
+        setActiveJob((prev) => prev && prev.jobId === data.jobId
+          ? { ...prev, finished: true, errorCount: data.errors }
+          : prev);
         reloadStats();
+        reloadUsers();
       } catch { /* ignore */ }
     };
     es.addEventListener("admin.variants_rebuild_progress", onProgress as EventListener);
     es.addEventListener("admin.variants_rebuild_done", onDone as EventListener);
     return () => { es.close(); };
-  }, [reloadStats]);
+  }, [reloadStats, reloadUsers]);
 
   const doScan = async () => {
     setScanning(true);
@@ -120,7 +129,7 @@ export function PreviewStateTab() {
       return;
     }
     setActiveJob({
-      jobId: data.jobId, scope: "user", total: 0, done: 0, errors: [], finished: false,
+      jobId: data.jobId, scope: "user", total: 0, done: 0, errors: [], errorCount: 0, finished: false,
       currentEmail: email,
     });
   };
@@ -134,7 +143,7 @@ export function PreviewStateTab() {
       return;
     }
     setActiveJob({
-      jobId: data.jobId, scope: "all", total: 0, done: 0, errors: [], finished: false,
+      jobId: data.jobId, scope: "all", total: 0, done: 0, errors: [], errorCount: 0, finished: false,
     });
   };
 
@@ -199,7 +208,7 @@ export function PreviewStateTab() {
           {activeJob && (
             <span className="text-sm">
               {activeJob.finished ? "Готово" : `Job ${activeJob.jobId.slice(0, 8)}...`}: {activeJob.done} / {activeJob.total}
-              {activeJob.errors.length > 0 && ` (${activeJob.errors.length} ошибок)`}
+              {activeJob.errorCount > 0 && ` (${activeJob.errorCount} ошибок)`}
               {activeJob.currentEmail && !activeJob.finished && ` - ${activeJob.currentEmail}`}
             </span>
           )}
@@ -231,17 +240,23 @@ export function PreviewStateTab() {
         </ul>
       </section>
 
-      {activeJob && activeJob.errors.length > 0 && (
+      {activeJob && activeJob.errorCount > 0 && (
         <section className="rounded-md border p-4">
           <details>
             <summary className="cursor-pointer text-sm font-semibold">
-              Ошибки последней пересборки ({activeJob.errors.length})
+              Ошибки последней пересборки ({activeJob.errorCount})
             </summary>
-            <ul className="mt-2 space-y-1 text-xs font-mono">
-              {activeJob.errors.map((e, i) => (
-                <li key={i}>generation {e.generationId}: {e.reason} {e.error}</li>
-              ))}
-            </ul>
+            {activeJob.errors.length > 0 ? (
+              <ul className="mt-2 space-y-1 text-xs font-mono">
+                {activeJob.errors.map((e, i) => (
+                  <li key={i}>generation {e.generationId}: {e.reason} {e.error}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Детали будут доступны после обновления страницы (поднимаются из job state).
+              </p>
+            )}
           </details>
         </section>
       )}
