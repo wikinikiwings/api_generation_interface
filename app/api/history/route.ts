@@ -137,30 +137,27 @@ export async function POST(request: NextRequest) {
     const thumbPath = path.join(variantsAbsDir, thumbFilename);
     const midPath = path.join(variantsAbsDir, midFilename);
 
-    // Uuid collision check — if any of the three files already exists,
-    // refuse to overwrite. Client treats 409 as a bug and retries with
-    // a fresh uuid.
-    const [oExists, tExists, mExists] = await Promise.all([
-      exists(originalPath),
-      exists(thumbPath),
-      exists(midPath),
-    ]);
-    if (oExists || tExists || mExists) {
-      return NextResponse.json(
-        { error: "uuid collision" },
-        { status: 409 }
-      );
-    }
+    // Idempotent original write: the sync provider flow (Fal/Comfy via
+    // downloadAndSave) has already saved the original under this same
+    // uuid before the client triggered the upload — the client extracts
+    // that uuid from outputUrl and reuses it here, so finding the file
+    // on disk means the bytes are already canonical. Skip the redundant
+    // write; the multipart `original` part is accepted but ignored on
+    // disk in that case. thumb/mid land in HISTORY_VARIANTS_DIR and are
+    // always written (overwrite on the rare second-run case is fine —
+    // they're deterministically derived from the original).
+    const oExists = await exists(originalPath);
 
-    // Write all three in parallel. If any write fails, roll back the
-    // others so no partial state survives on disk.
     const written: string[] = [];
     try {
-      await Promise.all([
-        writeAndTrack(originalPath, original, written),
+      const tasks: Promise<void>[] = [
         writeAndTrack(thumbPath, thumb, written),
         writeAndTrack(midPath, mid, written),
-      ]);
+      ];
+      if (!oExists) {
+        tasks.push(writeAndTrack(originalPath, original, written));
+      }
+      await Promise.all(tasks);
     } catch (err) {
       await Promise.all(
         written.map((p) => fs.unlink(p).catch(() => undefined))

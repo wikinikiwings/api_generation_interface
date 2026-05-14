@@ -1,6 +1,26 @@
 import type { HistoryEntry } from "@/types/wavespeed";
 
 /**
+ * Extract the UUID from a local history-image URL of the shape
+ *   `/api/history/image/<email>/<YYYY>/<MM>/<uuid>.<ext>`
+ *
+ * Returns `null` for any URL that doesn't fit this shape (external URLs,
+ * legacy flat URLs without email/yyyy/mm, blob: URIs, data: URIs, etc).
+ *
+ * Used by the upload pipeline to detect the case where the provider has
+ * already saved the original server-side: the client then reuses the
+ * server-chosen UUID for its multipart upload, and the POST handler
+ * notices the original file already exists and skips the duplicate write.
+ */
+export function extractServerUuid(url: string): string | null {
+  const m = url.match(
+    /\/api\/history\/image\/[^/]+\/\d{4}\/\d{2}\/([^/?#]+)\.[^./?#]+$/
+  );
+  if (!m) return null;
+  return decodeURIComponent(m[1]);
+}
+
+/**
  * Returns a thumb (~240px) URL for a history entry, or `undefined` when
  * no such URL can be known without a server roundtrip.
  *

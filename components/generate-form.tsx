@@ -17,6 +17,7 @@ import { useQuotas } from "@/app/providers/quotas-provider";
 import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
+import { extractServerUuid } from "@/lib/history-urls";
 import { cacheBlob } from "@/lib/image-cache";
 import { composeFinalPrompt } from "@/lib/styles/inject";
 import { type Style } from "@/lib/styles/types";
@@ -287,6 +288,14 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       const originalFilename =
         outputUrl.split("/").pop() || `output.${outputFormat}`;
 
+      // If the provider has already saved the original server-side under
+      // HISTORY_IMAGES_DIR (sync flow with downloadAndSave/saveBinary),
+      // outputUrl points at /api/history/image/<email>/<yyyy>/<mm>/<uuid>.<ext>.
+      // Reusing that same uuid here makes the POST handler's existence check
+      // skip the redundant original write — one file on disk per generation.
+      // Falls back to the client-generated historyId for non-local URLs.
+      const uploadUuid = extractServerUuid(outputUrl) ?? historyId;
+
       const uploadAbort = new AbortController();
 
       // Track blob URLs so we can register them with the entry once generated.
@@ -328,7 +337,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
 
       const doUpload = () =>
         uploadHistoryEntry({
-          uuid: historyId,
+          uuid: uploadUuid,
           workflowName,
           promptData: promptPayload,
           executionTimeSeconds: executionTimeMs / 1000,
