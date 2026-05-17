@@ -43,8 +43,13 @@ function parseAllowedHosts(): Set<string> {
  * Returns the public-facing origin (scheme://host[:port]) for this request,
  * trusting X-Forwarded-* headers ONLY when the resulting host is in the
  * allowlist. Returns null if no trustworthy origin can be derived.
+ *
+ * Exported so other route handlers can resolve the public origin when
+ * building absolute redirect URLs (e.g. post-login redirect in callback).
+ * Without this, `new URL(path, req.url)` would use the container-internal
+ * hostname (e.g. 0.0.0.0:3000), which leaks into the Location header.
  */
-function getTrustedOrigin(req: NextRequest): string | null {
+export function getTrustedOrigin(req: NextRequest): string | null {
   const allowed = parseAllowedHosts();
   if (allowed.size === 0) return null; // allowlist not configured → caller falls back to env
 

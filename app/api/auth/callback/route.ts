@@ -3,6 +3,7 @@ import { getDb } from "@/lib/history-db";
 import { handleCallback } from "@/lib/auth/handle-callback";
 import { fetchGoogleJwks } from "@/lib/auth/google";
 import { SESSION_COOKIE_NAME, TX_COOKIE_NAME } from "@/lib/auth/cookie-name";
+import { getTrustedOrigin } from "@/lib/auth/redirect-uri";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,12 @@ export async function GET(req: NextRequest) {
     return res;
   }
 
-  const res = NextResponse.redirect(new URL(result.redirect_to, req.url), 303);
+  // Resolve the public-facing origin from request headers, NOT from
+  // req.url. Inside Docker, req.url has the container-internal hostname
+  // (e.g. http://0.0.0.0:3000), which would otherwise leak into the
+  // Location header and send the user to a broken URL after login.
+  const publicOrigin = getTrustedOrigin(req) ?? new URL(req.url).origin;
+  const res = NextResponse.redirect(new URL(result.redirect_to, publicOrigin), 303);
   res.cookies.set({
     name: SESSION_COOKIE_NAME,
     value: result.session_id,
