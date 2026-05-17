@@ -1,0 +1,7 @@
+# Этот файл существует, чтобы git отслеживал пустую папку public/.
+# Next.js 15 standalone-сборка ожидает, что public/ существует — Dockerfile
+# в simple_build/Dockerfile делает `COPY --from=builder /app/public ./public`
+# и падает, если папки нет.
+#
+# Когда сюда что-то добавится (favicon.ico, robots.txt, статичные ассеты) —
+# этот .gitkeep можно удалить.
