@@ -6,6 +6,14 @@ export interface OAuthTxPayload {
   code_verifier: string;
   next: string;
   ts: number;
+  /**
+   * The redirect_uri used in the authorize step. Must be echoed verbatim
+   * to Google during code exchange; otherwise Google returns
+   * invalid_grant. Optional for backward compatibility with cookies
+   * issued before dynamic redirect_uri was added — callers should fall
+   * back to env GOOGLE_REDIRECT_URI when this is absent.
+   */
+  redirect_uri?: string;
 }
 
 const TTL_MS = 10 * 60 * 1000;

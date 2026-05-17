@@ -10,10 +10,14 @@ export async function GET(req: NextRequest) {
   const cookieSecret = process.env.SESSION_COOKIE_SECRET;
   const client_id = process.env.GOOGLE_CLIENT_ID;
   const client_secret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirect_uri = process.env.GOOGLE_REDIRECT_URI;
-  if (!cookieSecret || !client_id || !client_secret || !redirect_uri) {
+  if (!cookieSecret || !client_id || !client_secret) {
     return NextResponse.json({ error: "OAuth not configured" }, { status: 500 });
   }
+
+  // redirect_uri is resolved per-request and persisted in oauth_tx by
+  // /api/auth/google. handleCallback reads it from the decoded tx
+  // (falling back to env GOOGLE_REDIRECT_URI for legacy cookies).
+  const redirect_uri_fallback = process.env.GOOGLE_REDIRECT_URI ?? "";
 
   const db = getDb();
   const jwks = await fetchGoogleJwks();
@@ -24,7 +28,7 @@ export async function GET(req: NextRequest) {
     oauth_tx_cookie: req.cookies.get(TX_COOKIE_NAME)?.value ?? null,
     ip: req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? null,
     user_agent: req.headers.get("user-agent") ?? null,
-    env: { client_id, client_secret, redirect_uri, cookie_secret: cookieSecret, allowed_hd: process.env.ALLOWED_HD },
+    env: { client_id, client_secret, redirect_uri: redirect_uri_fallback, cookie_secret: cookieSecret, allowed_hd: process.env.ALLOWED_HD },
     jwks,
   });
 

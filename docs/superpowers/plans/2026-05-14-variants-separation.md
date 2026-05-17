@@ -65,7 +65,7 @@ Sharp is already listed in `package.json` at `^0.34.5`. This task confirms its p
 Run from the repo root:
 
 ```bash
-node -e "require('sharp')(Buffer.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,2,0,0,0,144,119,83,222,0,0,0,12,73,68,65,84,8,153,99,248,207,192,0,0,0,3,0,1,109,242,9,233,0,0,0,0,73,69,78,68,174,66,96,130])).resize(1,1).jpeg({quality:70}).toBuffer().then(b => console.log('OK', b.length, 'bytes')).catch(e => { console.error('FAIL', e); process.exit(1); })"
+node -e "require('sharp')({create:{width:8,height:8,channels:3,background:{r:0,g:128,b:255}}}).jpeg({quality:70}).toBuffer().then(b=>console.log('OK',b.length,'bytes')).catch(e=>{console.error('FAIL',e);process.exit(1)})"
 ```
 
 Expected: `OK <some number> bytes` printed in under one second.

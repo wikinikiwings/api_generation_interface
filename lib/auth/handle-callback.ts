@@ -54,12 +54,19 @@ export async function handleCallback(
 
   let tokens;
   try {
+    // Prefer redirect_uri persisted in the tx cookie (per-request, dynamic).
+    // Fall back to env for legacy cookies issued before this field existed.
+    const redirect_uri_for_exchange = tx.redirect_uri ?? inp.env.redirect_uri;
+    if (!redirect_uri_for_exchange) {
+      writeAuthEvent(db, { event_type: "login_denied_invalid_state", ip: inp.ip, user_agent: inp.user_agent, details: { stage: "no_redirect_uri" } });
+      return { kind: "error", status: 500, reason: "no_redirect_uri" };
+    }
     tokens = await exchangeCodeForTokens({
       code: inp.code,
       code_verifier: tx.code_verifier,
       client_id: inp.env.client_id,
       client_secret: inp.env.client_secret,
-      redirect_uri: inp.env.redirect_uri,
+      redirect_uri: redirect_uri_for_exchange,
       fetchImpl: inp.fetchImpl,
     });
   } catch (err) {

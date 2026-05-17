@@ -14,6 +14,7 @@ import crypto from "node:crypto";
 import { buildAuthorizeUrl, generatePkcePair } from "@/lib/auth/google";
 import { encodeOAuthTx } from "@/lib/auth/oauth-tx";
 import { safeNext } from "@/lib/auth/safe-next";
+import { resolveRedirectUri } from "@/lib/auth/redirect-uri";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ const COOKIE_NAME = PROD ? "__Host-oauth_tx" : "oauth_tx";
 
 export async function GET(req: NextRequest) {
   const client_id = process.env.GOOGLE_CLIENT_ID;
-  const redirect_uri = process.env.GOOGLE_REDIRECT_URI;
+  const redirect_uri = resolveRedirectUri(req);
   const secret = process.env.SESSION_COOKIE_SECRET;
   if (!client_id || !redirect_uri || !secret) {
     return NextResponse.json({ error: "OAuth not configured" }, { status: 500 });
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
   const { code_verifier, code_challenge } = await generatePkcePair();
 
   const cookieValue = encodeOAuthTx(
-    { state, nonce, code_verifier, next, ts: Date.now() },
+    { state, nonce, code_verifier, next, ts: Date.now(), redirect_uri },
     secret
   );
   const authorize = buildAuthorizeUrl({ client_id, redirect_uri, state, nonce, code_challenge });
