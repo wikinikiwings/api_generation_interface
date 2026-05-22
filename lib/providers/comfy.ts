@@ -28,23 +28,34 @@
 // Generate → spinner → image appears in 20-60 seconds.
 //
 // ========================================================================
-// Image upload strategy — hybrid (mirrors ComfyUI exactly)
+// Image upload strategy — size-aware hybrid
 // ========================================================================
-// ComfyUI's create_image_parts() uses a hybrid strategy and we replicate it:
+// Each input image enters the Gemini request either inline
+// (`inlineData.data`, base64) or by reference (`fileData.fileUri`, a URL to
+// api.comfy.org storage). The choice is made PER REQUEST by accumulated
+// byte size, NOT by a fixed count:
 //
-//   • First 10 images are uploaded to api.comfy.org/customers/storage via
-//     a two-step signed-URL dance (POST create-slot → PUT binary) and then
-//     referenced in the Gemini request as `fileData.fileUri`.
+//   • Images go inline while the running inline payload stays under
+//     INLINE_BUDGET_BYTES. Inline is preferred — see why below.
+//   • Once that budget is exhausted, the remaining images are uploaded to
+//     api.comfy.org storage and referenced by URL.
 //
-//   • Images 11-14 (Gemini's max) are sent as inline base64 in
-//     `inlineData.data` within the same request body.
+// Why inline is preferred: with a fileData URL, the Comfy proxy hands the
+// URL to Vertex AI, which must then crawl it itself. A slow fetch there
+// surfaces as `URL_TIMEOUT-TIMEOUT_FETCHPROXY` — a transient HTTP 400 that
+// is NOT retried (4xx is not in RETRIABLE_STATUSES) and sinks the whole
+// generation. Inline payloads have no such dependency.
 //
-// Why this matters: our Next.js backend will live on a remote PC. If we
-// put all 14 images inline in the request, the body can reach 100+ MB,
-// which is slow/unreliable to transfer from remote backend to api.comfy.org.
-// The hybrid strategy keeps the main request body small (just JSON with
-// URLs) and moves the bulk data transfer into the upload step, which
-// mirrors exactly what ComfyUI does and is proven to work.
+// Why the URL path still exists: the Gemini generateContent request has a
+// total-size limit (~20 MB for the inline path). A multi-image img2img
+// request can exceed that, so anything past INLINE_BUDGET_BYTES MUST go by
+// URL. ComfyUI's create_image_parts() always uses URL for the first 10
+// images; we diverge by sending small requests fully inline and only
+// falling back to URL for genuinely large ones — best of both.
+//
+// Vertex caps fileData URLs at 10 (MAX_URL_IMAGES). If a request is so
+// large that more than 10 images would need the URL path, it is rejected
+// up front with a clear error instead of building an invalid request.
 //
 // ========================================================================
 // Auth
@@ -106,11 +117,17 @@ const MODEL_SUPPORTS_RESOLUTION: Record<ModelId, boolean> = {
 };
 const STORAGE_CREATE_ENDPOINT = `${COMFY_API_BASE}/customers/storage`;
 
-// Vertex AI limit: max 10 file URIs per request. Images beyond this must
-// go inline as base64 (which is exactly what ComfyUI does).
+// Vertex AI caps fileData URLs at 10 per request.
 const MAX_URL_IMAGES = 10;
 // Overall max images (matches the hard limit in GeminiImage2.execute)
 const MAX_TOTAL_IMAGES = 14;
+// Byte budget for inline (base64) input images in a single Gemini request.
+// The Gemini generateContent inline path has a total-request limit of
+// ~20 MB; base64 inflates raw bytes by ~1.37×, so 13 MB raw → ~17.8 MB
+// base64, leaving headroom for the prompt and JSON envelope. Images that
+// don't fit this budget are uploaded and referenced by URL instead.
+// Tune DOWN if the comfy proxy starts rejecting large requests.
+const INLINE_BUDGET_BYTES = 13 * 1024 * 1024;
 
 // ============================================================
 // Env / auth
@@ -210,6 +227,9 @@ interface GeminiGenerateContentResponse {
 // ============================================================
 // Upload step: POST /customers/storage → PUT <signed_url>
 // ============================================================
+//
+// Only used for images that overflow INLINE_BUDGET_BYTES — small requests
+// never touch this path. See the "Image upload strategy" header comment.
 
 interface CreateUploadSlotResponse {
   download_url: string;
@@ -329,55 +349,89 @@ async function uploadSingleImage(
 }
 
 // ============================================================
-// Build GeminiPart[] for input images (hybrid strategy)
+// Build GeminiPart[] for input images (size-aware hybrid)
 // ============================================================
 
 /**
- * Convert an array of base64 data URIs into Gemini parts, mirroring
- * ComfyUI's create_image_parts() exactly:
- *
- *   • First min(N, 10) images: upload to /customers/storage, use as fileData
- *   • Remaining images (up to 14 total): pass as inline base64
- *
- * Uploads are sequential for predictable error attribution. If upload N
- * fails, we know which image broke and report it cleanly.
+ * Decoded (pre-base64) byte size of a base64 payload. base64 carries 3
+ * bytes per 4 chars; trailing '=' padding chars hold no data.
  */
-async function buildImageParts(images: string[]): Promise<GeminiPart[]> {
-  const parts: GeminiPart[] = [];
-  const urlCount = Math.min(images.length, MAX_URL_IMAGES);
+function rawByteSize(base64: string): number {
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.floor((base64.length * 3) / 4) - padding;
+}
 
-  // First 10 → upload and reference as fileData
-  for (let i = 0; i < urlCount; i++) {
+/**
+ * Convert input data-URI images into Gemini parts using the size-aware
+ * hybrid strategy (see the "Image upload strategy" header comment).
+ * Images stay inline while the running payload fits `inlineBudgetBytes`;
+ * the rest are uploaded to comfy.org storage and referenced by URL.
+ *
+ * `inlineBudgetBytes` is injectable purely so unit tests can exercise the
+ * URL overflow path without constructing multi-megabyte fixtures.
+ */
+export async function buildImageParts(
+  images: string[],
+  inlineBudgetBytes: number = INLINE_BUDGET_BYTES
+): Promise<GeminiPart[]> {
+  // Parse + validate every image up front, so a malformed input fails
+  // before we spend any upload round-trips.
+  const parsed = images.map((image, i) => {
+    const match = image.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      throw new Error(
+        `Image ${i + 1} is not a base64 data URI (Comfy provider expects browser-uploaded images)`
+      );
+    }
+    return {
+      mimeType: match[1],
+      base64: match[2],
+      rawBytes: rawByteSize(match[2]),
+    };
+  });
+
+  // Decide inline vs URL in input order, accumulating the inline budget.
+  const goesInline: boolean[] = [];
+  let inlineUsed = 0;
+  for (const p of parsed) {
+    const fits = inlineUsed + p.rawBytes <= inlineBudgetBytes;
+    goesInline.push(fits);
+    if (fits) inlineUsed += p.rawBytes;
+  }
+
+  // Vertex caps fileData URLs at MAX_URL_IMAGES. If more images than that
+  // overflow the inline budget, the request is simply too large to satisfy
+  // — fail fast with an actionable message rather than build an invalid
+  // request or silently drop images.
+  const urlCount = goesInline.filter((v) => !v).length;
+  if (urlCount > MAX_URL_IMAGES) {
+    throw new Error(
+      `Input images are too large: ${urlCount} of ${parsed.length} exceed the inline budget, but Vertex allows at most ${MAX_URL_IMAGES} by URL. Reduce the number or size of the input images.`
+    );
+  }
+
+  // Build parts in input order. Uploads are sequential for predictable
+  // error attribution — we report exactly which image failed.
+  const parts: GeminiPart[] = new Array(parsed.length);
+  for (let i = 0; i < parsed.length; i++) {
+    if (goesInline[i]) {
+      parts[i] = {
+        inlineData: { mimeType: parsed[i].mimeType, data: parsed[i].base64 },
+      };
+      continue;
+    }
     try {
       const uploaded = await uploadSingleImage(images[i], i);
-      parts.push({
-        fileData: {
-          mimeType: uploaded.mimeType,
-          fileUri: uploaded.fileUri,
-        },
-      });
+      parts[i] = {
+        fileData: { mimeType: uploaded.mimeType, fileUri: uploaded.fileUri },
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "unknown error";
       throw new Error(
-        `Failed to upload image ${i + 1}/${urlCount} to Comfy storage: ${msg}`
+        `Failed to upload image ${i + 1} to Comfy storage: ${msg}`
       );
     }
   }
-
-  // Images 11-14 → inline base64
-  for (let i = urlCount; i < images.length; i++) {
-    const match = images[i].match(/^data:([^;]+);base64,(.+)$/);
-    if (!match) {
-      throw new Error(`Image ${i + 1} is not a base64 data URI`);
-    }
-    parts.push({
-      inlineData: {
-        mimeType: match[1],
-        data: match[2],
-      },
-    });
-  }
-
   return parts;
 }
 
@@ -942,10 +996,10 @@ export const comfyProvider: Provider = {
 
     const startTime = Date.now();
 
-    // Step 1: upload first 10 images, keep rest as inline → get GeminiPart[].
-    // If no images were provided, this returns [] and we skip straight to
-    // building a text-only request body (Gemini handles t2i natively on the
-    // same endpoint).
+    // Step 1: turn input images into GeminiPart[] — inline while they fit
+    // the size budget, uploaded by URL beyond it. If no images were
+    // provided, this is [] and we skip straight to a text-only request body
+    // (Gemini handles t2i natively on the same endpoint).
     const imageParts = input.images?.length
       ? await buildImageParts(input.images)
       : [];
