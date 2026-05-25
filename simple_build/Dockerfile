@@ -66,9 +66,13 @@ ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# server-wrap.js patches http.createServer to raise keepAliveTimeout above
+# Caddy's upstream idle (~120s). Avoids Node-closes-keep-alive-at-5s race
+# that surfaces as Caddy 502 "use of closed network connection".
+COPY --from=builder /app/server-wrap.js ./server-wrap.js
 
 RUN mkdir -p /data/history_images
 
 EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "server.js"]
+CMD ["node", "server-wrap.js"]

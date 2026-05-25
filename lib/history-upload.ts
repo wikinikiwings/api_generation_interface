@@ -27,6 +27,44 @@ export interface UploadHistoryResult {
   midUrl: string;
 }
 
+/**
+ * HTTP statuses we retry on. These are all upstream-proxy or transient
+ * conditions where the request *might* never have reached Next.js, or
+ * reached it but the response was dropped. The /api/history POST handler
+ * is DB-idempotent (findGenerationByOutputPath), so re-sending the same
+ * multipart is safe even if the first attempt actually succeeded.
+ */
+const RETRIABLE_UPLOAD_STATUSES = new Set([502, 503, 504]);
+
+/** Total attempts = MAX_UPLOAD_RETRIES + 1 = 3. */
+const MAX_UPLOAD_RETRIES = 2;
+const INITIAL_UPLOAD_RETRY_MS = 5000;
+const MAX_UPLOAD_RETRY_MS = 15000;
+
+/**
+ * Promise-based sleep that rejects with AbortError if the signal fires
+ * mid-wait. Without this, an in-flight retry would ignore the user's
+ * cancel until the next fetch attempt actually starts.
+ */
+function sleepWithSignal(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new DOMException("Aborted", "AbortError"));
+    }
+    signal?.addEventListener("abort", onAbort);
+  });
+}
+
 export async function uploadHistoryEntry(
   p: UploadHistoryParams
 ): Promise<UploadHistoryResult> {
@@ -44,15 +82,46 @@ export async function uploadHistoryEntry(
   fd.append("thumb", new File([p.thumb], `thumb_${p.uuid}.jpg`, { type: "image/jpeg" }));
   fd.append("mid", new File([p.mid], `mid_${p.uuid}.jpg`, { type: "image/jpeg" }));
 
-  const res = await fetch("/api/history", {
-    method: "POST",
-    body: fd,
-    signal: p.signal,
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new UploadError(res.status, body);
+  // Retry on transient proxy 5xx / network errors. Mirrors the server-side
+  // fetchWithRetry in lib/providers/comfy.ts in shape: 2 retries, 5s→15s
+  // backoff, network errors and retriable statuses both retry, 4xx and
+  // non-retriable 5xx surface immediately. Caddy in front of the Next.js
+  // upstream has been seen to return 502 when the upstream socket closes
+  // mid-request — that's invisible to /api/history and recovers on retry.
+  let res: Response | null = null;
+  let lastBody = "";
+  let delay = INITIAL_UPLOAD_RETRY_MS;
+  for (let attempt = 0; attempt <= MAX_UPLOAD_RETRIES; attempt++) {
+    if (attempt > 0) await sleepWithSignal(delay, p.signal);
+    try {
+      res = await fetch("/api/history", {
+        method: "POST",
+        body: fd,
+        signal: p.signal,
+      });
+    } catch (err) {
+      // Surface user-initiated aborts immediately — never retry them.
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
+      if (attempt === MAX_UPLOAD_RETRIES) throw err;
+      delay = Math.min(delay * 2, MAX_UPLOAD_RETRY_MS);
+      continue;
+    }
+    if (res.ok) break;
+    if (!RETRIABLE_UPLOAD_STATUSES.has(res.status)) {
+      lastBody = await res.text().catch(() => "");
+      throw new UploadError(res.status, lastBody);
+    }
+    // Drain body so the connection can be released before the retry.
+    lastBody = await res.text().catch(() => "");
+    if (attempt === MAX_UPLOAD_RETRIES) {
+      throw new UploadError(res.status, lastBody);
+    }
+    delay = Math.min(delay * 2, MAX_UPLOAD_RETRY_MS);
+  }
+  if (!res || !res.ok) {
+    // Unreachable under normal control flow — every non-ok exit above
+    // throws. Keep TS happy and defend against future edits.
+    throw new UploadError(res?.status ?? -1, lastBody);
   }
 
   const json = (await res.json()) as {

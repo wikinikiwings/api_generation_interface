@@ -54,10 +54,13 @@ ENV TZ=UTC
 # RUN addgroup --system --gid ${UID} nodejs \
 #  && adduser  --system --uid ${UID} appuser
 
-# standalone output + статика + public
+# standalone output + статика + public + keep-alive wrapper
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# server-wrap.js patches http.createServer to raise keepAliveTimeout above
+# Caddy's upstream idle (~120s). See header comment in the file for why.
+COPY --from=builder /app/server-wrap.js ./server-wrap.js
 
 # data dir для SQLite + картинок (mount point)
 RUN mkdir -p /data/history_images
@@ -65,4 +68,4 @@ RUN mkdir -p /data/history_images
 EXPOSE 3000
 
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["node", "server.js"]
+CMD ["node", "server-wrap.js"]

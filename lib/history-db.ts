@@ -342,6 +342,36 @@ export function getGenerations(params: {
   return gens;
 }
 
+/**
+ * Find a generation owned by `user_id` whose first output has the given
+ * `filepath`. Used by POST /api/history to make the endpoint DB-idempotent:
+ * if a client retries the same multipart upload (e.g. after a 502 from
+ * the proxy that was actually delivered to Next.js), we return the
+ * existing row instead of inserting a duplicate.
+ *
+ * Returns null if no such row exists, or if it was soft-deleted.
+ * Includes 'deleted' rows in the lookup intentionally is NOT what we
+ * want — a previously-deleted entry should re-appear via a new INSERT,
+ * not be silently resurrected.
+ */
+export function findGenerationByOutputPath(
+  user_id: number,
+  filepath: string
+): IGenerationRecord | null {
+  const db = getDb();
+  const row = db
+    .prepare(`
+      SELECT g.id
+      FROM generations g
+      JOIN generation_outputs o ON o.generation_id = g.id
+      WHERE g.user_id = ? AND o.filepath = ? AND g.status != 'deleted'
+      LIMIT 1
+    `)
+    .get(user_id, filepath) as { id: number } | undefined;
+  if (!row) return null;
+  return getGenerationById(row.id);
+}
+
 export function getGenerationById(id: number): IGenerationRecord | null {
   const db = getDb();
   const gen = db

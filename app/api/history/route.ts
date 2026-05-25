@@ -7,6 +7,7 @@ import {
   getHistoryImagesDir,
   getHistoryVariantsDir,
   getGenerationById,
+  findGenerationByOutputPath,
 } from "@/lib/history-db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
@@ -170,54 +171,68 @@ export async function POST(request: NextRequest) {
     // name) is uuid-derived and already safe.
     const displayFilename = path.basename(original.name).slice(0, 255);
 
-    const id = saveGeneration({
-      user_id: user.id,
-      model_id: modelId,
-      provider,
-      workflowName,
-      promptData,
-      executionTimeSeconds,
-      outputs: [
-        {
-          filename: displayFilename,
-          filepath: `${relDir}/${originalFilename}`,
-          contentType: original.type,
-          size: original.size,
-        },
-      ],
-    });
+    // DB-level idempotency: a client retry after a transient proxy 502
+    // can land here a second time. Files are already idempotent (oExists
+    // skip + safe thumb/mid overwrite); without this lookup the second
+    // POST would insert a duplicate generations row pointing at the same
+    // files. Look up by (user_id, output filepath) — globally unique
+    // because filepath embeds the uuid.
+    const outputFilepath = `${relDir}/${originalFilename}`;
+    const existing = findGenerationByOutputPath(user.id, outputFilepath);
+    let id: number;
+    if (existing) {
+      id = existing.id;
+    } else {
+      id = saveGeneration({
+        user_id: user.id,
+        model_id: modelId,
+        provider,
+        workflowName,
+        promptData,
+        executionTimeSeconds,
+        outputs: [
+          {
+            filename: displayFilename,
+            filepath: outputFilepath,
+            contentType: original.type,
+            size: original.size,
+          },
+        ],
+      });
+    }
 
     // Fan out the new row to every connected client of this user.
     // Errors are caught so a broadcast failure never affects the HTTP
     // response — clients will catch up on next reconnect's refetch.
-    try {
-      const newRow = getGenerationById(id);
-      if (newRow) {
-        broadcastToUserId(user.id, {
-          type: "generation.created",
-          data: newRow,
-        });
+    // Skip on retry hit (existing) — the original POST already broadcast,
+    // duplicate fan-outs would inflate admin counts and force needless
+    // dedupe work on client SSE handlers.
+    if (!existing) {
+      try {
+        const newRow = getGenerationById(id);
+        if (newRow) {
+          broadcastToUserId(user.id, {
+            type: "generation.created",
+            data: newRow,
+          });
+        }
+      } catch (err) {
+        console.error("[history POST] broadcast failed:", err);
       }
-    } catch (err) {
-      console.error("[history POST] broadcast failed:", err);
-    }
 
-    // Admin-only fan-out: notify every active admin so admin views
-    // (Users tab counts, etc.) can refresh aggregates in real time
-    // without the admin needing to re-focus the page or re-expand a
-    // row. Errors swallowed for the same reason as above.
-    try {
-      const admins = getDb().prepare(
-        `SELECT id FROM users WHERE role='admin' AND status='active'`
-      ).all() as { id: number }[];
-      for (const a of admins) {
-        broadcastToUserId(a.id, {
-          type: "admin.user_generated",
-          data: { user_id: user.id },
-        });
+      try {
+        const admins = getDb().prepare(
+          `SELECT id FROM users WHERE role='admin' AND status='active'`
+        ).all() as { id: number }[];
+        for (const a of admins) {
+          broadcastToUserId(a.id, {
+            type: "admin.user_generated",
+            data: { user_id: user.id },
+          });
+        }
+      } catch (err) {
+        console.error("[history POST] admin broadcast failed:", err);
       }
-    } catch (err) {
-      console.error("[history POST] admin broadcast failed:", err);
     }
 
     // Per-segment encoding. Encoding the whole `relDir` (which contains
