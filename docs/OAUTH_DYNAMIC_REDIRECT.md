@@ -2,16 +2,21 @@
 
 ## Problem
 
-A single Google OAuth client needs to support three deployment surfaces:
+A single Google OAuth client needs to support two deployment surfaces:
 
 | Surface | URL |
 |---|---|
 | Local dev (Next.js dev server) | `http://localhost:3000` |
-| LAN over VPN | `http://192.168.88.76:3000` |
 | Production (Caddy + Docker) | `https://localgen.maxkdiffused.org` |
 
 `GOOGLE_REDIRECT_URI` as a static env var can only encode one of these.
 A static value pinned to prod breaks dev; pinned to dev breaks prod.
+
+LAN access by private IP (e.g. `http://192.168.88.76:3000`) is **not**
+supported as an OAuth surface because Google rejects RFC1918 addresses
+in redirect URIs — only `localhost` and public-TLD domains are allowed.
+For LAN testing, either use the production domain over VPN, or tunnel
+to localhost (`ssh -L 3000:localhost:3000 ...`).
 
 ## Solution
 
@@ -50,7 +55,7 @@ code leaks to attacker".
 ## Required env vars (production)
 
 ```env
-ALLOWED_REDIRECT_HOSTS=localhost:3000,192.168.88.76:3000,localgen.maxkdiffused.org
+ALLOWED_REDIRECT_HOSTS=localhost:3000,localgen.maxkdiffused.org
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 # GOOGLE_REDIRECT_URI is now optional — kept as a legacy fallback only.
@@ -61,13 +66,11 @@ GOOGLE_CLIENT_SECRET=...
 OAuth client → **Authorized redirect URIs** must list every surface:
 
 - `http://localhost:3000/api/auth/callback`
-- `http://192.168.88.76:3000/api/auth/callback`
 - `https://localgen.maxkdiffused.org/api/auth/callback`
 
 OAuth client → **Authorized JavaScript origins** (no path, no trailing slash):
 
 - `http://localhost:3000`
-- `http://192.168.88.76:3000`
 - `https://localgen.maxkdiffused.org`
 
 ## Caddy
@@ -85,7 +88,7 @@ localgen.maxkdiffused.org {
 ## Caveats
 
 - Cookie name flips to `__Host-oauth_tx` when `NODE_ENV=production`,
-  which requires `Secure` (i.e. HTTPS at the browser level). LAN access
-  via `http://192.168.88.76:3000` only works if `NODE_ENV !== production`
-  on that build. For now, LAN access is dev-only; if LAN access in prod
-  becomes a requirement, we'd need to relax the `__Host-` prefix.
+  which requires `Secure` (i.e. HTTPS at the browser level). The dev
+  build uses the plain `oauth_tx` cookie and works over HTTP on
+  `localhost`. There is no supported config for OAuth on a LAN IP in
+  production — Google blocks RFC1918 redirect URIs at registration time.
