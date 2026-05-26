@@ -54,3 +54,6 @@ next-env.d.ts
 
 # runtime-generated prompt style files
 /data/styles/
+
+# one-off admin scripts (kept locally, not part of the deployable app)
+/scripts/bulk-add-users.mjs
