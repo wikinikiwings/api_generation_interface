@@ -131,26 +131,82 @@ export async function saveBinary(
   };
 }
 
+// Retry shape mirrors lib/providers/comfy.ts:fetchWithRetry — same 5s→10s
+// backoff, same retriable-status set, network errors caught and replayed.
+// GET is idempotent so retry is unconditionally safe here.
+const DOWNLOAD_RETRY_DELAYS_MS = [5000, 10000];
+const DOWNLOAD_RETRIABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const DOWNLOAD_NETWORK_ERROR_RE = /fetch failed|aborted|UND_ERR_|ECONNRESET|other side closed/i;
+
 /**
  * Download a remote image URL and save it locally under the user's
  * `<email>/<YYYY>/<MM>/` directory. Extension inferred from Content-Type
  * unless `preferredExt` is provided.
+ *
+ * Retries on transient network errors (UND_ERR_SOCKET "other side closed"
+ * when an upstream CDN closes our keep-alive socket — see 2026-05-26
+ * incident) and on retriable 5xx. Without retry, any single hiccup wastes
+ * the upstream provider call's API credits (Gemini/WaveSpeed/Fal don't
+ * refund a successful generation we couldn't fetch).
  */
 export async function downloadAndSave(
   url: string,
   userEmail: string,
   preferredExt?: string
 ): Promise<SavedImage> {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(
-      `Failed to download ${url}: HTTP ${res.status} ${res.statusText}`
-    );
+  const maxRetries = DOWNLOAD_RETRY_DELAYS_MS.length;
+  let lastError = "";
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = DOWNLOAD_RETRY_DELAYS_MS[attempt - 1];
+      console.warn(
+        `[image-storage/download] retry ${attempt}/${maxRetries} after ${delay}ms (previous: ${lastError})`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+
+    let res: Response;
+    try {
+      res = await fetch(url, { cache: "no-store" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lastError = `network: ${msg}`;
+      if (attempt === maxRetries) {
+        throw new Error(
+          `Failed to download ${url} after ${maxRetries + 1} attempts: ${msg}`
+        );
+      }
+      continue;
+    }
+
+    if (!res.ok) {
+      if (DOWNLOAD_RETRIABLE_STATUSES.has(res.status) && attempt < maxRetries) {
+        await res.text().catch(() => undefined);
+        lastError = `HTTP ${res.status}`;
+        continue;
+      }
+      throw new Error(
+        `Failed to download ${url}: HTTP ${res.status} ${res.statusText}`
+      );
+    }
+
+    try {
+      const contentType = res.headers.get("content-type");
+      const ext = preferredExt || extFromContentType(contentType);
+      const arrayBuffer = await res.arrayBuffer();
+      return await saveBinary(arrayBuffer, ext, userEmail);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (DOWNLOAD_NETWORK_ERROR_RE.test(msg) && attempt < maxRetries) {
+        lastError = `body-stream: ${msg}`;
+        continue;
+      }
+      throw err;
+    }
   }
-  const contentType = res.headers.get("content-type");
-  const ext = preferredExt || extFromContentType(contentType);
-  const arrayBuffer = await res.arrayBuffer();
-  return saveBinary(arrayBuffer, ext, userEmail);
+
+  throw new Error(`[image-storage/download] retry loop exhausted unexpectedly`);
 }
 
 /**
