@@ -819,15 +819,26 @@ function ZoomableImage({
    *   originals come from our own backend / proxied providers, so
    *   this isn't a concern in practice. If it ever becomes one,
    *   the fetch path below will throw and we surface "error".
+   *
+   * Why pass a Promise<Blob> to ClipboardItem:
+   * - Clipboard API checks document focus at the moment of the
+   *   write call, not at click time. With several awaits between
+   *   click and write, focus can be lost (menu dismissed, DevTools
+   *   focused, tab switched) and the write fails with
+   *   NotAllowedError: "Document is not focused".
+   * - Constructing ClipboardItem with a Promise lets us call
+   *   `clipboard.write()` synchronously inside the click handler
+   *   while focus is guaranteed; the browser holds the clipboard
+   *   slot until the Promise resolves.
    */
-  async function copyOriginalToClipboard() {
+  function copyOriginalToClipboard() {
     if (!fullUrl) return;
     setCopyState("loading");
-    try {
+
+    const pngBlobPromise: Promise<Blob> = (async () => {
       const res = await fetch(fullUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
-      // Decode → draw on canvas → re-encode as PNG.
       const bitmap = await createImageBitmap(blob);
       const canvas = document.createElement("canvas");
       canvas.width = bitmap.width;
@@ -836,22 +847,25 @@ function ZoomableImage({
       if (!ctx) throw new Error("2D context unavailable");
       ctx.drawImage(bitmap, 0, 0);
       bitmap.close?.();
-      const pngBlob: Blob = await new Promise((resolve, reject) => {
+      return await new Promise<Blob>((resolve, reject) => {
         canvas.toBlob(
           (b) => (b ? resolve(b) : reject(new Error("toBlob returned null"))),
           "image/png"
         );
       });
-      await navigator.clipboard.write([
-        new ClipboardItem({ "image/png": pngBlob }),
-      ]);
-      setCopyState("done");
-      setTimeout(closeMenu, 600);
-    } catch (err) {
-      console.error("[ImageDialog] copy original failed:", err);
-      setCopyState("error");
-      setTimeout(closeMenu, 1200);
-    }
+    })();
+
+    navigator.clipboard
+      .write([new ClipboardItem({ "image/png": pngBlobPromise })])
+      .then(() => {
+        setCopyState("done");
+        setTimeout(closeMenu, 600);
+      })
+      .catch((err) => {
+        console.error("[ImageDialog] copy original failed:", err);
+        setCopyState("error");
+        setTimeout(closeMenu, 1200);
+      });
   }
 
   async function downloadOriginal() {
