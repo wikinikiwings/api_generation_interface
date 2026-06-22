@@ -6,9 +6,12 @@ import {
   deleteGeneration,
   getHistoryImagesDir,
   getHistoryVariantsDir,
+  getHistoryInputsDir,
   getGenerationById,
   findGenerationByOutputPath,
 } from "@/lib/history-db";
+import { writeInputAssets, MAX_INPUT_IMAGES, extFromContentType } from "@/lib/history-inputs";
+import { buildInputAssetUrls } from "@/app/api/history/input-asset-urls";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/cookie-name";
 import { broadcastToUserId } from "@/lib/sse-broadcast";
@@ -88,6 +91,25 @@ export async function POST(request: NextRequest) {
     const original = formData.get("original");
     const thumb = formData.get("thumb");
     const mid = formData.get("mid");
+
+    // Optional input assets: inputCount + inputthumb_<i> (+ optional inputfull_<i>).
+    const inputCount = Math.min(
+      Math.max(parseInt((formData.get("inputCount") as string) || "0", 10) || 0, 0),
+      MAX_INPUT_IMAGES
+    );
+    const inputItems: { thumb: Buffer; full?: { buffer: Buffer; ext: string } }[] = [];
+    for (let i = 0; i < inputCount; i++) {
+      const t = formData.get(`inputthumb_${i}`);
+      if (!(t instanceof File)) continue;
+      const item: { thumb: Buffer; full?: { buffer: Buffer; ext: string } } = {
+        thumb: Buffer.from(await t.arrayBuffer()),
+      };
+      const f = formData.get(`inputfull_${i}`);
+      if (f instanceof File) {
+        item.full = { buffer: Buffer.from(await f.arrayBuffer()), ext: extFromContentType(f.type) };
+      }
+      inputItems.push(item);
+    }
 
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid)) {
       return NextResponse.json(
@@ -170,6 +192,18 @@ export async function POST(request: NextRequest) {
     // may have sent and cap length. `originalFilename` (actual on-disk
     // name) is uuid-derived and already safe.
     const displayFilename = path.basename(original.name).slice(0, 255);
+
+    if (inputItems.length > 0) {
+      await writeInputAssets(getHistoryInputsDir(), relDir, uuid, inputItems);
+      const inputPrefix = `/api/history/image/${encodeURIComponent(user.email)}/${yyyy}/${mm}`;
+      const { thumbnails, images } = buildInputAssetUrls(
+        inputPrefix,
+        uuid,
+        inputItems.map((it) => ({ ext: it.full ? it.full.ext : null }))
+      );
+      promptData.inputThumbnails = thumbnails;
+      if (images.length > 0) promptData.inputImages = images;
+    }
 
     // DB-level idempotency: a client retry after a transient proxy 502
     // can land here a second time. Files are already idempotent (oExists
