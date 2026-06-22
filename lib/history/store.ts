@@ -142,6 +142,8 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
   let workflowName: string | undefined = row.workflow_name;
   let userPrompt: string | undefined;
   let styleIds: string[] | undefined;
+  let inputThumbnails: string[] | undefined;
+  let inputImages: string[] | undefined;
   try {
     const parsed = JSON.parse(row.prompt_data) as Record<string, unknown> & {
       prompt?: string;
@@ -149,6 +151,8 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
       userPrompt?: string;
       styleId?: string;
       styleIds?: string[];
+      inputThumbnails?: unknown[];
+      inputImages?: unknown[];
     };
     prompt =
       typeof parsed.prompt === "string"
@@ -165,6 +169,12 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
       // Legacy single-style record: coerce to array.
       styleIds = parsed.styleId === "__default__" ? [] : [parsed.styleId];
     }
+    const strArray = (v: unknown): string[] | undefined =>
+      Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]) : undefined;
+    // Strings may be /api/history/image/... URLs or legacy data:image base64;
+    // both are valid <img src> values.
+    inputThumbnails = strArray(parsed.inputThumbnails);
+    inputImages = strArray(parsed.inputImages);
   } catch {
     // Malformed prompt_data — keep prompt as "".
   }
@@ -187,6 +197,8 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
     prompt,
     userPrompt,
     styleIds,
+    inputThumbnails,
+    inputImages,
     provider: "wavespeed",
     workflowName,
     outputFormat: inferOutputFormat(firstImage?.content_type, filename),

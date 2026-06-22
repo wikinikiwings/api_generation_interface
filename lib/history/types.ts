@@ -57,6 +57,7 @@ export interface HistoryEntry {
   aspectRatio?: AspectRatio;
   outputFormat?: OutputFormat;
   inputThumbnails?: string[];                         // small data URLs of inputs
+  inputImages?: string[];                             // full-res input URLs (restore source)
   createdAt: number;                                  // ms epoch
   status: TaskStatus;
   error?: string | null;
