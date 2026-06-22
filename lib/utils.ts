@@ -65,6 +65,21 @@ export function fileToDataURL(file: File): Promise<string> {
 }
 
 /**
+ * Decode a `data:<mime>;base64,<payload>` URL into a Blob. Used to turn
+ * client-generated thumbnail data URLs into multipart upload parts.
+ * Throws on anything that is not a base64 data URL.
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const m = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(dataUrl);
+  if (!m || !m[2]) throw new Error("not a base64 data URL");
+  const mime = m[1] || "application/octet-stream";
+  const binary = atob(m[3]);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+/**
  * Generate a canonical RFC-4122 v4 UUID string.
  *
  * Tries `crypto.randomUUID` first (secure-context only — HTTPS or
