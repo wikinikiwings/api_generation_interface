@@ -17,6 +17,11 @@ export interface UploadHistoryParams {
   originalContentType: string;
   thumb: Blob;
   mid: Blob;
+  /** Full-res input images (index-aligned with inputThumbs). Server writes
+   *  them to HISTORY_INPUTS_DIR and stores their URLs in promptData.inputImages. */
+  inputImages?: Blob[];
+  /** 240px input thumbnails (index-aligned). Stored as promptData.inputThumbnails URLs. */
+  inputThumbs?: Blob[];
   signal?: AbortSignal;
 }
 
@@ -81,6 +86,18 @@ export async function uploadHistoryEntry(
   );
   fd.append("thumb", new File([p.thumb], `thumb_${p.uuid}.jpg`, { type: "image/jpeg" }));
   fd.append("mid", new File([p.mid], `mid_${p.uuid}.jpg`, { type: "image/jpeg" }));
+
+  const thumbs = p.inputThumbs ?? [];
+  const fulls = p.inputImages ?? [];
+  fd.append("inputCount", String(thumbs.length));
+  thumbs.forEach((thumb, i) => {
+    fd.append(`inputthumb_${i}`, new File([thumb], `inputthumb_${i}.jpg`, { type: "image/jpeg" }));
+    const full = fulls[i];
+    if (full) {
+      const ext = full.type === "image/png" ? "png" : full.type === "image/webp" ? "webp" : "jpg";
+      fd.append(`inputfull_${i}`, new File([full], `inputfull_${i}.${ext}`, { type: full.type || "image/jpeg" }));
+    }
+  });
 
   // Retry on transient proxy 5xx / network errors. Mirrors the server-side
   // fetchWithRetry in lib/providers/comfy.ts in shape: 2 retries, 5s→15s

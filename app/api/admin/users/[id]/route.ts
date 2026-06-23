@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, getHistoryImagesDir, getHistoryVariantsDir } from "@/lib/history-db";
+import { getDb, getHistoryImagesDir, getHistoryVariantsDir, getHistoryInputsDir } from "@/lib/history-db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import { writeAuthEvent } from "@/lib/auth/audit";
 import { deleteSessionsForUser } from "@/lib/auth/session";
@@ -149,10 +149,12 @@ export async function DELETE(
   // Use details.target_email (no auth_events.email column populated) to mirror
   // the `admin_user_created` pattern at app/api/admin/users/route.ts:47.
   const variantsDir = getHistoryVariantsDir();
-  // Predicted target for the audit log — probed across BOTH roots so the
-  // slot we record matches the slot we'll actually try to occupy.
+  const inputsDir = getHistoryInputsDir();
+  // Predicted target for the audit log — probed across all THREE roots
+  // (images, variants, inputs) so the slot we record matches the slot
+  // we'll actually try to occupy.
   const predictedTarget = await findFreeDeletedTargetAcross(
-    [imagesDir, variantsDir],
+    [imagesDir, variantsDir, inputsDir],
     purgeResult.email
   );
 
@@ -191,10 +193,20 @@ export async function DELETE(
     variantsOutcome = "failed";
     renameError = renameError ?? (err as Error).message;
   }
+  let inputsOutcome: SideOutcome;
+  try {
+    const inpRes = await renameUserFolderToTarget(inputsDir, purgeResult.email, predictedTarget);
+    inputsOutcome = inpRes.renamed ? "renamed" : inpRes.reason;
+  } catch (err) {
+    console.error("[admin/users DELETE] inputs rename failed:", err);
+    inputsOutcome = "failed";
+    renameError = renameError ?? (err as Error).message;
+  }
 
   fanOutUserPurged(userId);
 
-  const anyRenamed = imagesOutcome === "renamed" || variantsOutcome === "renamed";
+  const anyRenamed =
+    imagesOutcome === "renamed" || variantsOutcome === "renamed" || inputsOutcome === "renamed";
   const responseBody: Record<string, unknown> = {
     ok: true,
     purged: {
@@ -202,10 +214,10 @@ export async function DELETE(
       generations_deleted: purgeResult.generations_deleted,
       summary_csv_written: purgeResult.csv_written,
       folder_renamed_to: anyRenamed ? predictedTarget : null,
-      rename_outcome: { images: imagesOutcome, variants: variantsOutcome },
+      rename_outcome: { images: imagesOutcome, variants: variantsOutcome, inputs: inputsOutcome },
     },
   };
-  if (imagesOutcome === "failed" || variantsOutcome === "failed") {
+  if (imagesOutcome === "failed" || variantsOutcome === "failed" || inputsOutcome === "failed") {
     responseBody.warning = "rename_failed";
     responseBody.intended_target = predictedTarget;
     if (renameError) responseBody.rename_error = renameError;

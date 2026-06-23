@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { getDb, getHistoryImagesDir, getHistoryVariantsDir } from "@/lib/history-db";
+import { getDb, getHistoryImagesDir, getHistoryVariantsDir, getHistoryInputsDir } from "@/lib/history-db";
 import { getCurrentUser } from "@/lib/auth/current-user";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -37,12 +37,14 @@ export async function GET(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  // Dispatch root by basename prefix: variant filenames (thumb_/mid_)
-  // live in HISTORY_VARIANTS_DIR; originals (UUID-prefixed) live in
-  // HISTORY_IMAGES_DIR. Path-traversal guards above apply to both.
   const filename = segs[segs.length - 1];
-  const isVariant = filename.startsWith("thumb_") || filename.startsWith("mid_");
-  const dir = isVariant ? getHistoryVariantsDir() : getHistoryImagesDir();
+  // Dispatch root by basename prefix: thumb_/mid_ → variants cache,
+  // input_ (full + input_thumb_) → input store, else → originals.
+  const dir = filename.startsWith("thumb_") || filename.startsWith("mid_")
+    ? getHistoryVariantsDir()
+    : filename.startsWith("input_")
+      ? getHistoryInputsDir()
+      : getHistoryImagesDir();
   const filePath = path.join(dir, ...segs);
   const resolved = path.resolve(filePath);
   if (!resolved.startsWith(path.resolve(dir))) {

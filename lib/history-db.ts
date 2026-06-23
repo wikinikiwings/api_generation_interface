@@ -22,12 +22,17 @@ const HISTORY_IMAGES_DIR = path.join(DATA_DIR, "history_images");
 const HISTORY_VARIANTS_DIR = process.env.HISTORY_VARIANTS_DIR
   ? path.resolve(process.env.HISTORY_VARIANTS_DIR)
   : path.join(DATA_DIR, "history_variants");
+const HISTORY_INPUTS_DIR = process.env.HISTORY_INPUTS_DIR
+  ? path.resolve(process.env.HISTORY_INPUTS_DIR)
+  : path.join(DATA_DIR, "history_inputs");
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 if (!fs.existsSync(HISTORY_IMAGES_DIR))
   fs.mkdirSync(HISTORY_IMAGES_DIR, { recursive: true });
 if (!fs.existsSync(HISTORY_VARIANTS_DIR))
   fs.mkdirSync(HISTORY_VARIANTS_DIR, { recursive: true });
+if (!fs.existsSync(HISTORY_INPUTS_DIR))
+  fs.mkdirSync(HISTORY_INPUTS_DIR, { recursive: true });
 
 let _db: Database.Database | null = null;
 
@@ -425,6 +430,10 @@ export function getHistoryImagesDir(): string {
 
 export function getHistoryVariantsDir(): string {
   return HISTORY_VARIANTS_DIR;
+}
+
+export function getHistoryInputsDir(): string {
+  return HISTORY_INPUTS_DIR;
 }
 
 export function getDataDir(): string {
