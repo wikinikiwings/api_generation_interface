@@ -49,6 +49,31 @@ describe("schema initialization", () => {
     expect(() => db.prepare(`DELETE FROM users WHERE id=?`).run(uid)).toThrow(/FOREIGN KEY/);
   });
 
+  it("creates the covering index for the admin monthly-generation count", () => {
+    const db = freshDb();
+    const idx = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='index' AND name='idx_generations_user_created_status'`
+    ).get();
+    expect(idx).toBeTruthy();
+  });
+
+  it("admin monthly-count query is index-only (covering) — never reads bloated table pages", () => {
+    const db = freshDb();
+    // The GROUP BY pass used by GET /api/admin/users. With prompt_data holding
+    // ~1GB of base64 images in prod, this MUST stay index-only or the admin
+    // users tab slows to a crawl and the container can stall under SSE bursts.
+    const plan = db.prepare(`
+      EXPLAIN QUERY PLAN
+      SELECT user_id, COUNT(*) AS n
+      FROM generations
+      WHERE status IN ('completed','deleted')
+        AND created_at >= strftime('%Y-%m-01T00:00:00.000Z','now')
+      GROUP BY user_id
+    `).all() as { detail: string }[];
+    const detail = plan.map((r) => r.detail).join(" | ");
+    expect(detail).toMatch(/COVERING INDEX idx_generations_user_created_status/);
+  });
+
   it("sessions cascade-delete when user is deleted", () => {
     const db = freshDb();
     db.exec(`PRAGMA foreign_keys = ON`);

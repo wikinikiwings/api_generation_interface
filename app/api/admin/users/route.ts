@@ -16,14 +16,22 @@ function requireAdmin(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const a = requireAdmin(req); if (a.error) return a.error;
   const showDeleted = req.nextUrl.searchParams.get("showDeleted") === "1";
+  // gens_this_month is computed in a single GROUP BY pass (one index-only scan
+  // over idx_generations_user_created_status) and LEFT JOINed, rather than a
+  // correlated subquery re-evaluated per user. With ~1GB of bloated generations
+  // rows (prompt_data base64 images), the old per-user correlated count read
+  // table pages for every row; this version never touches them.
   const sql = `
     SELECT u.id, u.email, u.name, u.picture_url, u.role, u.status, u.last_login_at, u.created_at,
-      (SELECT COUNT(*) FROM generations g
-        WHERE g.user_id = u.id
-          AND g.status IN ('completed', 'deleted')
-          AND g.created_at >= strftime('%Y-%m-01T00:00:00.000Z', 'now')
-      ) AS gens_this_month
+      COALESCE(gc.n, 0) AS gens_this_month
     FROM users u
+    LEFT JOIN (
+      SELECT user_id, COUNT(*) AS n
+      FROM generations
+      WHERE status IN ('completed', 'deleted')
+        AND created_at >= strftime('%Y-%m-01T00:00:00.000Z', 'now')
+      GROUP BY user_id
+    ) gc ON gc.user_id = u.id
     ${showDeleted ? "" : "WHERE u.status != 'deleted'"}
     ORDER BY u.created_at DESC
   `;

@@ -43,6 +43,24 @@ export function UsersTab() {
     if (r.ok) setUsers(await r.json());
   }, [showDeleted]);
 
+  // Coalesced refetch for the SSE storm: `admin.user_generated` fires on EVERY
+  // generation by ANY user. Refetching the (heavy) list per event used to pile
+  // up requests on SQLite's single writer until the container hung. This caps
+  // the list refetch to at most once per window — the first event in a quiet
+  // period schedules a single trailing refetch; events during the window fold
+  // into it. Direct user actions still call `refetch()` immediately.
+  const refetchTimer = React.useRef<number | null>(null);
+  const debouncedRefetch = React.useCallback(() => {
+    if (refetchTimer.current !== null) return; // already scheduled this window
+    refetchTimer.current = window.setTimeout(() => {
+      refetchTimer.current = null;
+      void refetch();
+    }, 2500);
+  }, [refetch]);
+  React.useEffect(() => () => {
+    if (refetchTimer.current !== null) window.clearTimeout(refetchTimer.current);
+  }, []);
+
   React.useEffect(() => { void refetch(); }, [refetch]);
 
   // Pull fresh data whenever the admin returns to this tab.
@@ -63,10 +81,11 @@ export function UsersTab() {
   React.useEffect(() => {
     if (typeof EventSource === "undefined") return;
     const es = new EventSource("/api/history/stream");
-    const onEvent = () => void refetch();
-    es.addEventListener("admin.user_generated", onEvent);
-    es.addEventListener("quota_updated", onEvent);
-    es.addEventListener("admin.user_purged", onEvent);
+    // admin.user_generated can fire in bursts → coalesce. Purge/quota events
+    // are rare and admin-initiated, so reflect them promptly.
+    es.addEventListener("admin.user_generated", debouncedRefetch);
+    es.addEventListener("quota_updated", () => void refetch());
+    es.addEventListener("admin.user_purged", () => void refetch());
     es.onerror = () => {
       // No watchdog here — the visibilitychange path already covers
       // the recovery case. Just close to free the slot; will reopen
@@ -74,7 +93,7 @@ export function UsersTab() {
       es.close();
     };
     return () => es.close();
-  }, [refetch]);
+  }, [refetch, debouncedRefetch]);
 
   async function addUser() {
     const email = newEmail.trim().toLowerCase();
@@ -252,6 +271,21 @@ function UserQuotas({ userId }: { userId: number }) {
   }, [userId]);
   React.useEffect(() => { void refetch(); }, [refetch]);
 
+  // Coalesce SSE-driven refetches the same way the outer list does — a heavy
+  // user expanded during a generation burst would otherwise refetch the quota
+  // panel (N+1 usageThisMonth counts) on every event.
+  const refetchTimer = React.useRef<number | null>(null);
+  const debouncedRefetch = React.useCallback(() => {
+    if (refetchTimer.current !== null) return;
+    refetchTimer.current = window.setTimeout(() => {
+      refetchTimer.current = null;
+      void refetch();
+    }, 2500);
+  }, [refetch]);
+  React.useEffect(() => () => {
+    if (refetchTimer.current !== null) window.clearTimeout(refetchTimer.current);
+  }, []);
+
   // Cross-tab admin real-time: another admin (or this admin from another
   // tab) saving an override on this user, OR a model default change, OR
   // any user posting a generation that affects usage_this_month — all
@@ -270,14 +304,14 @@ function UserQuotas({ userId }: { userId: number }) {
     es.addEventListener("admin.user_generated", (e) => {
       try {
         const { user_id } = JSON.parse((e as MessageEvent).data) as { user_id: number };
-        if (user_id === userId) void refetch();
+        if (user_id === userId) debouncedRefetch();
       } catch {
         // Malformed payload — defensive ignore.
       }
     });
     es.onerror = () => es.close();
     return () => es.close();
-  }, [userId, refetch]);
+  }, [userId, refetch, debouncedRefetch]);
 
   async function clearOverride(model_id: string) {
     const r = await fetch(`/api/admin/users/${userId}/quotas/${model_id}`, { method: "DELETE" });

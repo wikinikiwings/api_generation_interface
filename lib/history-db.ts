@@ -124,6 +124,13 @@ export function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_generations_created_at         ON generations(created_at);
     CREATE INDEX IF NOT EXISTS idx_generations_user_model_created ON generations(user_id, model_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_generations_provider           ON generations(provider);
+    -- Covering index for the per-user monthly-count used by the admin users
+    -- list (GET /api/admin/users). Column order (user_id, created_at, status)
+    -- lets COUNT(*) WHERE user_id=? AND created_at>=? AND status IN (...) run
+    -- index-only — critical because generations rows are huge (prompt_data
+    -- holds base64 i2i inputs, ~1GB table), so any table-page read for the
+    -- count is expensive. Verified COVERING via EXPLAIN QUERY PLAN.
+    CREATE INDEX IF NOT EXISTS idx_generations_user_created_status ON generations(user_id, created_at, status);
 
     CREATE TABLE IF NOT EXISTS generation_outputs (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
