@@ -142,6 +142,7 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
   let workflowName: string | undefined = row.workflow_name;
   let userPrompt: string | undefined;
   let styleIds: string[] | undefined;
+  let styleVersions: Record<string, string> | undefined;
   let inputThumbnails: string[] | undefined;
   let inputImages: string[] | undefined;
   try {
@@ -151,6 +152,7 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
       userPrompt?: string;
       styleId?: string;
       styleIds?: string[];
+      styleVersions?: Record<string, unknown>;
       inputThumbnails?: unknown[];
       inputImages?: unknown[];
     };
@@ -168,6 +170,17 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
     } else if (typeof parsed.styleId === "string") {
       // Legacy single-style record: coerce to array.
       styleIds = parsed.styleId === "__default__" ? [] : [parsed.styleId];
+    }
+    if (
+      parsed.styleVersions &&
+      typeof parsed.styleVersions === "object" &&
+      !Array.isArray(parsed.styleVersions)
+    ) {
+      const sv: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed.styleVersions)) {
+        if (typeof v === "string") sv[k] = v;
+      }
+      styleVersions = Object.keys(sv).length > 0 ? sv : undefined;
     }
     const strArray = (v: unknown): string[] | undefined =>
       Array.isArray(v) && v.every((x) => typeof x === "string") ? (v as string[]) : undefined;
@@ -197,6 +210,7 @@ export function serverGenToEntry(row: ServerGeneration, uuid: string): HistoryEn
     prompt,
     userPrompt,
     styleIds,
+    styleVersions,
     inputThumbnails,
     inputImages,
     provider: "wavespeed",
