@@ -169,27 +169,30 @@ describe("applyServerRow", () => {
   });
 
   it("parses styleVersions and leaves prompt empty when absent", () => {
-    const row: ServerGeneration = {
-      id: 1,
-      username: "a@x.com",
-      workflow_name: "wavespeed:wavespeed/m/t2i",
+    const row = mkRow({
       prompt_data: JSON.stringify({
         userPrompt: "hello",
         styleIds: ["s1"],
         styleVersions: { s1: "2026-06-01T00:00:00Z" },
       }),
-      execution_time_seconds: 1,
-      created_at: "2026-06-01T00:00:00.000Z",
-      status: "completed",
-      outputs: [
-        { id: 1, generation_id: 1, filename: "o.png", filepath: "a@x.com/2026/06/uuid.png", content_type: "image/png", size: 4 },
-      ],
-    };
+    });
     const e = serverGenToEntry(row, "uuid");
     expect(e.userPrompt).toBe("hello");
     expect(e.styleIds).toEqual(["s1"]);
     expect(e.styleVersions).toEqual({ s1: "2026-06-01T00:00:00Z" });
     expect(e.prompt).toBe("");
+  });
+
+  it("collapses styleVersions to undefined when all values are non-string", () => {
+    const row = mkRow({
+      prompt_data: JSON.stringify({
+        userPrompt: "x",
+        styleIds: ["s1"],
+        styleVersions: { s1: 123 },
+      }),
+    });
+    const e = serverGenToEntry(row, "uuid-collapse");
+    expect(e.styleVersions).toBeUndefined();
   });
 });
 
