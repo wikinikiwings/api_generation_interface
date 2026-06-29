@@ -146,6 +146,7 @@ export function addPendingEntry(input: NewPendingInput): void {
     prompt: input.prompt,
     userPrompt: input.userPrompt,
     styleIds: input.styleIds,
+    styleVersions: input.styleVersions,
     provider: input.provider,
     model: input.model,
     workflowName: input.workflowName,

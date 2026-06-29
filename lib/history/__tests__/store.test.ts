@@ -167,6 +167,33 @@ describe("applyServerRow", () => {
     const entry = serverGenToEntry(row, "uuid-legacy-2");
     expect(entry.prompt).toBe("");
   });
+
+  it("parses styleVersions and leaves prompt empty when absent", () => {
+    const row = mkRow({
+      prompt_data: JSON.stringify({
+        userPrompt: "hello",
+        styleIds: ["s1"],
+        styleVersions: { s1: "2026-06-01T00:00:00Z" },
+      }),
+    });
+    const e = serverGenToEntry(row, "uuid");
+    expect(e.userPrompt).toBe("hello");
+    expect(e.styleIds).toEqual(["s1"]);
+    expect(e.styleVersions).toEqual({ s1: "2026-06-01T00:00:00Z" });
+    expect(e.prompt).toBe("");
+  });
+
+  it("collapses styleVersions to undefined when all values are non-string", () => {
+    const row = mkRow({
+      prompt_data: JSON.stringify({
+        userPrompt: "x",
+        styleIds: ["s1"],
+        styleVersions: { s1: 123 },
+      }),
+    });
+    const e = serverGenToEntry(row, "uuid-collapse");
+    expect(e.styleVersions).toBeUndefined();
+  });
 });
 
 describe("applyServerList cross-device delete", () => {

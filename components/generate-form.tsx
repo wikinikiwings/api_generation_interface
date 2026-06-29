@@ -20,6 +20,7 @@ import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
 import { extractServerUuid } from "@/lib/history-urls";
 import { cacheBlob } from "@/lib/image-cache";
 import { composeFinalPrompt } from "@/lib/styles/inject";
+import { styleVersionsOf } from "@/lib/styles/resolve-wrapped";
 import { type Style } from "@/lib/styles/types";
 import { StylesMultiSelect } from "@/components/styles-multi-select";
 import {
@@ -273,9 +274,9 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         hasImages ? "edit" : "t2i"
       }`;
       const promptPayload = {
-        prompt: composeFinalPrompt(prompt.trim(), activeStyles),
         userPrompt: prompt.trim(),
         styleIds: activeStyles.map((s) => s.id),
+        styleVersions: styleVersionsOf(activeStyles),
         resolution: hasResolutions ? resolution : undefined,
         aspectRatio: aspectRatio || undefined,
         outputFormat,
@@ -501,6 +502,7 @@ export function GenerateForm({ styles }: GenerateFormProps) {
       prompt: composeFinalPrompt(prompt.trim(), activeStyles),
       userPrompt: prompt.trim(),
       styleIds: activeStyles.map((s) => s.id),
+      styleVersions: styleVersionsOf(activeStyles),
       resolution,
       aspectRatio: (aspectRatio || undefined) as AspectRatio | undefined,
       outputFormat,

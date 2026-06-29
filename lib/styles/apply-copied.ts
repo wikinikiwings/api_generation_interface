@@ -10,6 +10,8 @@ export interface CopiedEntry {
    * entries. Empty array means an explicit post-feature "Стандартный".
    */
   styleIds?: string[];
+  /** styleId → updatedAt at generation time, for edit detection. */
+  styleVersions?: Record<string, string>;
 }
 
 export interface ApplyCopiedSetters {
@@ -30,6 +32,20 @@ export function joinStyleNames(
   return ids.map((id) => styles.find((s) => s.id === id)?.name ?? id).join(" + ");
 }
 
+/** Names of applied styles whose updatedAt differs from the gen-time fingerprint. */
+function changedStyleNames(
+  styleIds: readonly string[],
+  styleVersions: Record<string, string> | undefined,
+  styles: readonly Style[]
+): string[] {
+  if (!styleVersions) return [];
+  return styleIds
+    .map((id) => styles.find((s) => s.id === id))
+    .filter((s): s is Style => s !== undefined)
+    .filter((s) => styleVersions[s.id] !== undefined && styleVersions[s.id] !== s.updatedAt)
+    .map((s) => s.name);
+}
+
 /**
  * Four branches:
  *   1. Pre-feature (styleIds undefined) — paste entry.prompt, leave
@@ -37,9 +53,10 @@ export function joinStyleNames(
  *   2. Default (styleIds === []) — paste clean userPrompt, clear
  *      selection, "Промпт скопирован".
  *   3. All ids resolve — paste clean userPrompt, set selection to the
- *      stored ids, toast with joined names.
- *   4. At least one id missing — paste wrapped entry.prompt, clear
- *      selection, warn with name of the missing style (or generic plural).
+ *      stored ids, toast with joined names; append change note if any
+ *      style's updatedAt differs from styleVersions.
+ *   4. At least one id missing — paste clean userPrompt, select only
+ *      the survivors, warn with name of the missing style (or generic plural).
  */
 export function applyCopiedPrompt(
   entry: CopiedEntry,
@@ -66,20 +83,28 @@ export function applyCopiedPrompt(
     setters.setPrompt(entry.userPrompt ?? entry.prompt);
     setters.setSelectedStyleIds(entry.styleIds);
     const names = joinStyleNames(entry.styleIds, styles);
-    const msg =
+    const base =
       entry.styleIds.length === 1
         ? `Промпт скопирован, стиль «${names}» применён`
         : `Промпт скопирован, стили «${names}» применены`;
-    setters.toastInfo(msg);
+    const changed = changedStyleNames(entry.styleIds, entry.styleVersions, styles);
+    const note =
+      changed.length === 0
+        ? ""
+        : changed.length === 1
+        ? `; стиль «${changed[0]}» изменён с момента генерации`
+        : `; стили изменены с момента генерации`;
+    setters.toastInfo(base + note);
     return;
   }
 
-  // At least one missing — full fallback (variant A).
-  setters.setPrompt(entry.prompt);
-  setters.setSelectedStyleIds([]);
+  // At least one missing — degrade to clean userPrompt, keep survivors.
+  const survivors = entry.styleIds.filter((id) => knownIds.has(id));
+  setters.setPrompt(entry.userPrompt ?? entry.prompt);
+  setters.setSelectedStyleIds(survivors);
   const warnMsg =
     missingIds.length === 1
-      ? `Стиль «${missingIds[0]}» удалён, промпт вставлен как есть`
-      : "Некоторые стили удалены, промпт вставлен как есть";
+      ? `Стиль «${missingIds[0]}» удалён, применены остальные`
+      : "Некоторые стили удалены, применены остальные";
   setters.toastWarn(warnMsg);
 }
