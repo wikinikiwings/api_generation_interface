@@ -352,6 +352,7 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
               e.stopPropagation();
               e.preventDefault();
               const wrapped = resolveWrappedPrompt(entry, styles);
+              if (!wrapped) return;
               const ok = await copyToClipboard(wrapped);
               if (!ok) return;
               applyCopiedPrompt(
