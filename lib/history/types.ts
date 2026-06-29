@@ -50,6 +50,10 @@ export interface HistoryEntry {
   /** Ids of styles applied at generation. Undefined on pre-feature entries.
    *  Empty array means explicit post-feature "Стандартный". */
   styleIds?: string[];
+  /** styleId → style.updatedAt captured at generation time. Enables the
+   *  "style changed since generation" restore toast. Absent on migrated
+   *  and pre-feature rows. */
+  styleVersions?: Record<string, string>;
   provider: ProviderId;
   model?: string;                                     // optional for cross-device entries
   workflowName?: string;
@@ -90,6 +94,10 @@ export interface NewPendingInput {
   prompt: string;
   userPrompt?: string;
   styleIds?: string[];
+  /** styleId → style.updatedAt captured at generation time. Enables the
+   *  "style changed since generation" restore toast. Absent on migrated
+   *  and pre-feature rows. */
+  styleVersions?: Record<string, string>;
   provider: ProviderId;
   model?: string;
   workflowName?: string;
