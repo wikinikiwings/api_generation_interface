@@ -20,6 +20,7 @@ import { BlurUpImage } from "@/components/blur-up-image";
 import { thumbUrlForEntry } from "@/lib/history-urls";
 import { type Style } from "@/lib/styles/types";
 import { applyCopiedPrompt, joinStyleNames } from "@/lib/styles/apply-copied";
+import { resolveWrappedPrompt } from "@/lib/styles/resolve-wrapped";
 
 export interface OutputAreaProps {
   historyOpen: boolean;
@@ -187,7 +188,7 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
         <BlurUpImage
           sharpSrc={(entry.previewUrl ?? entry.outputUrl)!}
           backdropSrc={thumbUrlForEntry(entry)}
-          alt={entry.prompt}
+          alt={entry.userPrompt || entry.prompt}
           draggable
           onDragStart={(e) => {
             // Carry the FULL-RESOLUTION URL via the same custom MIME the
@@ -332,7 +333,7 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
           <div className="flex-1 min-w-0">
             <p
               className="line-clamp-3 text-xs italic text-muted-foreground"
-              title={entry.prompt}
+              title={resolveWrappedPrompt(entry, styles)}
             >
               {entry.userPrompt ?? entry.prompt}
             </p>
@@ -350,7 +351,8 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
             onClick={async (e) => {
               e.stopPropagation();
               e.preventDefault();
-              const ok = await copyToClipboard(entry.prompt);
+              const wrapped = resolveWrappedPrompt(entry, styles);
+              const ok = await copyToClipboard(wrapped);
               if (!ok) return;
               applyCopiedPrompt(
                 {

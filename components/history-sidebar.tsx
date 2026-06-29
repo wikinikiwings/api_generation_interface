@@ -18,6 +18,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { BlurUpImage } from "@/components/blur-up-image";
 import { type Style } from "@/lib/styles/types";
 import { applyCopiedPrompt, joinStyleNames } from "@/lib/styles/apply-copied";
+import { resolveWrappedPrompt } from "@/lib/styles/resolve-wrapped";
 import { MyQuotasTab } from "@/components/my-quotas-tab";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -306,8 +307,9 @@ function EntryCard({
       : null;
 
   async function handleCopy() {
-    if (!entry.prompt) return;
-    const ok = await copyToClipboard(entry.prompt);
+    const wrapped = resolveWrappedPrompt(entry, styles);
+    if (!wrapped) return;
+    const ok = await copyToClipboard(wrapped);
     if (!ok) return;
     applyCopiedPrompt(
       {
@@ -329,7 +331,7 @@ function EntryCard({
   const thumbJsx = cardSrc && fullSrc ? (
     <BlurUpImage
       sharpSrc={cardSrc}
-      alt={entry.prompt || "generation"}
+      alt={(entry.userPrompt || entry.prompt) || "generation"}
       draggable
       onDragStart={(e) => {
         const ext = entry.outputFormat === "jpeg" ? "jpeg" : "png";
@@ -396,7 +398,7 @@ function EntryCard({
             size="icon"
             className="h-5 w-5"
             onClick={handleCopy}
-            disabled={!entry.prompt}
+            disabled={!entry.userPrompt && !entry.prompt}
             title="Copy prompt"
           >
             <Copy className="h-3 w-3" />
