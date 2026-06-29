@@ -415,7 +415,7 @@ export function ImageDialog({ entry, children, downloadUrl, siblings, initialInd
               key={currentEntry.id}
               src={effectivePreviewSrc}
               backdropSrc={thumbUrlForEntry(currentEntry)}
-              alt={currentEntry.prompt}
+              alt={currentEntry.userPrompt || currentEntry.prompt}
               originalUrl={effectiveDownloadUrl}
               downloadFilename={`wavespeed-${currentEntry.taskId || currentEntry.id}.${currentEntry.outputFormat === "jpeg" ? "jpeg" : "png"}`}
               onLoadError={() => {
