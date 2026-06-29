@@ -316,6 +316,7 @@ function EntryCard({
         prompt: entry.prompt,
         userPrompt: entry.userPrompt,
         styleIds: entry.styleIds,
+        styleVersions: entry.styleVersions,
       },
       styles,
       {

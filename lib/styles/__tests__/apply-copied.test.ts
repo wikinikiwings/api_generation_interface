@@ -107,7 +107,7 @@ describe("applyCopiedPrompt", () => {
     );
   });
 
-  it("one of several deleted: full fallback with id-named warning", () => {
+  it("one of several deleted: degrade to userPrompt, keep survivors, id-named warning", () => {
     const setters = makeSetters();
     const kino = makeStyle({ id: "k", name: "Кино" });
     applyCopiedPrompt(
@@ -119,15 +119,15 @@ describe("applyCopiedPrompt", () => {
       [kino], // "deleted-b12" not in list
       setters
     );
-    expect(setters.setPrompt).toHaveBeenCalledWith("cinematic. a cat. 35mm");
-    expect(setters.setSelectedStyleIds).toHaveBeenCalledWith([]);
+    expect(setters.setPrompt).toHaveBeenCalledWith("a cat");
+    expect(setters.setSelectedStyleIds).toHaveBeenCalledWith(["k"]);
     expect(setters.toastWarn).toHaveBeenCalledWith(
-      "Стиль «deleted-b12» удалён, промпт вставлен как есть"
+      "Стиль «deleted-b12» удалён, применены остальные"
     );
     expect(setters.toastInfo).not.toHaveBeenCalled();
   });
 
-  it("multiple deleted: generic plural warning", () => {
+  it("multiple deleted: degrade to userPrompt, keep survivors, generic plural warning", () => {
     const setters = makeSetters();
     const kino = makeStyle({ id: "k", name: "Кино" });
     applyCopiedPrompt(
@@ -139,11 +139,48 @@ describe("applyCopiedPrompt", () => {
       [kino],
       setters
     );
-    expect(setters.setPrompt).toHaveBeenCalledWith("complex. a cat. wrap");
-    expect(setters.setSelectedStyleIds).toHaveBeenCalledWith([]);
+    expect(setters.setPrompt).toHaveBeenCalledWith("a cat");
+    expect(setters.setSelectedStyleIds).toHaveBeenCalledWith(["k"]);
     expect(setters.toastWarn).toHaveBeenCalledWith(
-      "Некоторые стили удалены, промпт вставлен как есть"
+      "Некоторые стили удалены, применены остальные"
     );
+  });
+
+  it("appends a 'style changed' note when updatedAt differs from styleVersions", () => {
+    const styles = [{ id: "a", name: "Кино", prefix: "P", suffix: "", createdAt: "x", updatedAt: "2026-06-02T00:00:00Z" }];
+    const setters = { setPrompt: vi.fn(), setSelectedStyleIds: vi.fn(), toastInfo: vi.fn(), toastWarn: vi.fn() };
+    applyCopiedPrompt(
+      { prompt: "ignored", userPrompt: "hi", styleIds: ["a"], styleVersions: { a: "2026-06-01T00:00:00Z" } },
+      styles,
+      setters
+    );
+    expect(setters.setPrompt).toHaveBeenCalledWith("hi");
+    expect(setters.setSelectedStyleIds).toHaveBeenCalledWith(["a"]);
+    expect(setters.toastInfo).toHaveBeenCalledWith(expect.stringContaining("изменён"));
+  });
+
+  it("does NOT append the note when styleVersions matches", () => {
+    const styles = [{ id: "a", name: "Кино", prefix: "P", suffix: "", createdAt: "x", updatedAt: "2026-06-01T00:00:00Z" }];
+    const setters = { setPrompt: vi.fn(), setSelectedStyleIds: vi.fn(), toastInfo: vi.fn(), toastWarn: vi.fn() };
+    applyCopiedPrompt(
+      { prompt: "ignored", userPrompt: "hi", styleIds: ["a"], styleVersions: { a: "2026-06-01T00:00:00Z" } },
+      styles,
+      setters
+    );
+    expect(setters.toastInfo).toHaveBeenCalledWith(expect.not.stringContaining("изменён"));
+  });
+
+  it("on a deleted style: pastes userPrompt and selects only the survivors", () => {
+    const styles = [{ id: "a", name: "Кино", prefix: "P", suffix: "", createdAt: "x", updatedAt: "y" }];
+    const setters = { setPrompt: vi.fn(), setSelectedStyleIds: vi.fn(), toastInfo: vi.fn(), toastWarn: vi.fn() };
+    applyCopiedPrompt(
+      { prompt: "wrapped-old", userPrompt: "hi", styleIds: ["a", "gone"] },
+      styles,
+      setters
+    );
+    expect(setters.setPrompt).toHaveBeenCalledWith("hi");
+    expect(setters.setSelectedStyleIds).toHaveBeenCalledWith(["a"]);
+    expect(setters.toastWarn).toHaveBeenCalled();
   });
 
   it("single style with userPrompt undefined falls back to entry.prompt", () => {

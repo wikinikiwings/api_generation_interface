@@ -360,6 +360,7 @@ function OutputCard({ entry, siblings, index, onRemove, styles }: OutputCardProp
                   prompt: entry.prompt,
                   userPrompt: entry.userPrompt,
                   styleIds: entry.styleIds,
+                  styleVersions: entry.styleVersions,
                 },
                 styles,
                 {
