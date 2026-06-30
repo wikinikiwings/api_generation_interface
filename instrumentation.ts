@@ -1,18 +1,14 @@
-// Next.js instrumentation hook (runs once at server startup). Starts the
-// in-process low-balance ticker in the nodejs runtime only. Each tick is cheap
-// (reads app_settings + the clock); it hits fal.ai only when a configured slot
-// is due. Errors are logged, never thrown.
+// Next.js instrumentation hook (runs once at server startup).
+//
+// The node-only ticker lives in ./instrumentation-node and is imported ONLY
+// inside the `NEXT_RUNTIME === "nodejs"` block. This positive-guard form lets
+// the edge build dead-code-eliminate the branch, so the edge bundle never
+// pulls in better-sqlite3 (via balance-schedule → history-db) — which would
+// otherwise fail to resolve node builtins (`fs`/`path`) at build time.
+// See https://nextjs.org/docs/app/guides/instrumentation
 
 export async function register(): Promise<void> {
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
-
-  const g = globalThis as typeof globalThis & { __falBalanceTick?: ReturnType<typeof setInterval> };
-  if (g.__falBalanceTick) return; // guard against double-registration (dev/HMR)
-
-  const { runScheduledCheck } = await import("@/lib/admin/balance-schedule");
-  const seconds = Number(process.env.FAL_BALANCE_TICK_SECONDS) || 30;
-
-  g.__falBalanceTick = setInterval(() => {
-    runScheduledCheck().catch((e) => console.error("[balance-tick]", e));
-  }, seconds * 1000);
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("./instrumentation-node");
+  }
 }
