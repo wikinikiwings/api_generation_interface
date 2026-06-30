@@ -5,28 +5,45 @@ import { Plus, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { utcTimeToLocal, localTimeToUtc, tzLabel } from "@/lib/time/tz";
 
+interface MaskedWebhook { id: string; label: string; urlMask: string }
+
 export function FalBalanceAlertConfig() {
   const [threshold, setThreshold] = React.useState<string>("");
   const [localTimes, setLocalTimes] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
 
+  const [webhooks, setWebhooks] = React.useState<MaskedWebhook[]>([]);
+  const [newLabel, setNewLabel] = React.useState("");
+  const [newUrl, setNewUrl] = React.useState("");
+  const [adding, setAdding] = React.useState(false);
+
+  const loadWebhooks = React.useCallback(async () => {
+    const r = await fetch("/api/admin/balance-webhooks", { cache: "no-store" });
+    if (!r.ok) return;
+    const d = (await r.json()) as { webhooks: MaskedWebhook[] };
+    setWebhooks(d.webhooks);
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const r = await fetch("/api/admin/balance-config", { cache: "no-store" });
-        if (!r.ok) return;
-        const d = (await r.json()) as { threshold: number | null; checkTimesUtc: string[] };
-        if (cancelled) return;
-        setThreshold(d.threshold === null ? "" : String(d.threshold));
-        setLocalTimes(d.checkTimesUtc.map(utcTimeToLocal));
+        if (r.ok) {
+          const d = (await r.json()) as { threshold: number | null; checkTimesUtc: string[] };
+          if (!cancelled) {
+            setThreshold(d.threshold === null ? "" : String(d.threshold));
+            setLocalTimes(d.checkTimesUtc.map(utcTimeToLocal));
+          }
+        }
+        await loadWebhooks();
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadWebhooks]);
 
   const addRow = () => setLocalTimes((t) => [...t, "09:00"]);
   const removeRow = (i: number) => setLocalTimes((t) => t.filter((_, idx) => idx !== i));
@@ -52,6 +69,44 @@ export function FalBalanceAlertConfig() {
       toast.error("Сетевая ошибка при сохранении");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const addWebhook = async () => {
+    setAdding(true);
+    try {
+      const r = await fetch("/api/admin/balance-webhooks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: newLabel.trim(), url: newUrl.trim() }),
+      });
+      if (r.ok) {
+        setNewLabel("");
+        setNewUrl("");
+        await loadWebhooks();
+        toast.success("Получатель добавлен");
+      } else {
+        const b = await r.json().catch(() => ({}));
+        toast.error(`Ошибка: ${b?.error ?? r.status}`);
+      }
+    } catch {
+      toast.error("Сетевая ошибка при добавлении");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const deleteWebhook = async (id: string) => {
+    try {
+      const r = await fetch("/api/admin/balance-webhooks", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (r.ok) await loadWebhooks();
+      else toast.error("Не удалось удалить получателя");
+    } catch {
+      toast.error("Сетевая ошибка при удалении");
     }
   };
 
@@ -122,6 +177,57 @@ export function FalBalanceAlertConfig() {
               {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Сохранить
             </button>
+
+            <div className="space-y-2 border-t border-border pt-4">
+              <span className="text-sm text-muted-foreground">
+                Получатели уведомления (Slack, по одному на человека)
+              </span>
+              {webhooks.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Пока нет получателей — используется webhook из .env (если задан).
+                </p>
+              ) : (
+                webhooks.map((w) => (
+                  <div key={w.id} className="flex items-center gap-2 text-sm">
+                    <span className="font-medium">{w.label}</span>
+                    <span className="text-xs text-muted-foreground">{w.urlMask}</span>
+                    <button
+                      type="button"
+                      onClick={() => void deleteWebhook(w.id)}
+                      aria-label="Удалить получателя"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/60"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              )}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder="Имя"
+                  className="w-32 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                />
+                <input
+                  type="text"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                  placeholder="https://hooks.slack.com/services/..."
+                  className="w-72 rounded-md border border-border bg-background px-2 py-1 text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => void addWebhook()}
+                  disabled={adding || !newLabel.trim() || !newUrl.trim()}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted/60 disabled:opacity-50"
+                >
+                  {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  Добавить
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
