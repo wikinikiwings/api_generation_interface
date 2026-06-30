@@ -136,6 +136,14 @@ export function initSchema(db: Database.Database): void {
     -- holds base64 i2i inputs, ~1GB table), so any table-page read for the
     -- count is expensive. Verified COVERING via EXPLAIN QUERY PLAN.
     CREATE INDEX IF NOT EXISTS idx_generations_user_created_status ON generations(user_id, created_at, status);
+    -- Covering index for the per-model generation count used by the admin
+    -- models list (GET /api/admin/models). Column order (model_id, status,
+    -- created_at) lets COUNT(*) WHERE model_id=? AND status IN (...) [AND
+    -- created_at range] run index-only. Without it the correlated subquery
+    -- full-scans generations once PER MODEL (e.g. 5 full-table scans on the
+    -- default all-time view) — the same bloat-page slowdown the users tab had.
+    -- Verified COVERING via EXPLAIN QUERY PLAN.
+    CREATE INDEX IF NOT EXISTS idx_generations_model_status_created ON generations(model_id, status, created_at);
 
     CREATE TABLE IF NOT EXISTS generation_outputs (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
