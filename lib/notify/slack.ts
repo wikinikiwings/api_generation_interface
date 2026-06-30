@@ -1,8 +1,7 @@
-// Server-only. Posts a plain-text message to the configured Slack incoming
-// webhook. Webhook unset → no-op (alerting disabled). Never throws.
+// Server-only. Posts a plain-text message to a given Slack incoming webhook
+// URL. Falsy url → no-op. Never throws. (Callers resolve which url(s) to use.)
 
-export async function sendSlackAlert(text: string): Promise<boolean> {
-  const url = process.env.FAL_BALANCE_SLACK_WEBHOOK;
+export async function sendSlackAlert(text: string, url: string): Promise<boolean> {
   if (!url) return false;
   try {
     const res = await fetch(url, {

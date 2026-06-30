@@ -5,6 +5,7 @@
 import { getFalBalance } from "@/lib/providers/fal-billing";
 import { getAppSetting, setAppSetting } from "@/lib/history-db";
 import { sendSlackAlert } from "@/lib/notify/slack";
+import { resolveTargets } from "@/lib/admin/balance-webhooks";
 
 export function decideAlert(args: {
   balance: number;
@@ -17,7 +18,7 @@ export function decideAlert(args: {
   return { shouldSend: false, nextAlerted: alreadyAlerted };
 }
 
-export async function checkBalanceAndAlert(): Promise<{ status: string; sent?: boolean }> {
+export async function checkBalanceAndAlert(): Promise<{ status: string; sent?: number }> {
   const raw = getAppSetting("falBalanceThreshold");
   const threshold = raw == null || raw.trim() === "" ? NaN : Number(raw);
   if (!Number.isFinite(threshold)) return { status: "no_threshold" };
@@ -28,10 +29,12 @@ export async function checkBalanceAndAlert(): Promise<{ status: string; sent?: b
   const alreadyAlerted = getAppSetting("falBalanceAlerted") === "true";
   const { shouldSend, nextAlerted } = decideAlert({ balance: bal.balance, threshold, alreadyAlerted });
 
-  let sent = false;
+  let sent = 0;
   if (shouldSend) {
     const text = `⚠️ fal.ai: баланс низкий — ${bal.balance.toFixed(2)} ${bal.currency} (порог ${threshold}). Пополнить: https://fal.ai/dashboard`;
-    sent = await sendSlackAlert(text);
+    const urls = resolveTargets();
+    const results = await Promise.all(urls.map((u) => sendSlackAlert(text, u)));
+    sent = results.filter(Boolean).length;
   }
   setAppSetting("falBalanceAlerted", nextAlerted ? "true" : "false");
   return { status: "ok", sent };
