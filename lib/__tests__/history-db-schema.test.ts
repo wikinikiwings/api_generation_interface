@@ -74,6 +74,29 @@ describe("schema initialization", () => {
     expect(detail).toMatch(/COVERING INDEX idx_generations_user_created_status/);
   });
 
+  it("creates the covering index for the admin per-model generation count", () => {
+    const db = freshDb();
+    const idx = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='index' AND name='idx_generations_model_status_created'`
+    ).get();
+    expect(idx).toBeTruthy();
+  });
+
+  it("admin per-model count query is index-only (covering) — never reads bloated table pages", () => {
+    const db = freshDb();
+    // The correlated subquery used by GET /api/admin/models (the per-model
+    // total_generations column). Without a (model_id, status, created_at)
+    // covering index this full-scans generations once PER MODEL on the default
+    // all-time view — the same bloat-page problem the users tab had.
+    const plan = db.prepare(`
+      EXPLAIN QUERY PLAN
+      SELECT COUNT(*) FROM generations g
+      WHERE g.model_id = 'm1' AND g.status IN ('completed','deleted')
+    `).all() as { detail: string }[];
+    const detail = plan.map((r) => r.detail).join(" | ");
+    expect(detail).toMatch(/COVERING INDEX idx_generations_model_status_created/);
+  });
+
   it("sessions cascade-delete when user is deleted", () => {
     const db = freshDb();
     db.exec(`PRAGMA foreign_keys = ON`);
