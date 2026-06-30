@@ -17,6 +17,7 @@ import { StylesSection } from "@/components/admin/styles-section";
 import { UsersTab } from "@/components/admin/users-tab";
 import { ModelsTab } from "@/components/admin/models-tab";
 import { PreviewStateTab } from "@/components/admin/preview-state-tab";
+import { FalBalanceCard } from "@/components/admin/fal-balance-card";
 import type { ProviderId } from "@/lib/providers/types";
 import type { ProviderMeta } from "@/lib/providers/registry";
 
@@ -95,7 +96,9 @@ export function AdminPanel() {
 
   function SettingsContent() {
     return (
-      <section className="rounded-xl border border-border bg-background shadow-sm">
+      <div className="space-y-6">
+        <FalBalanceCard />
+        <section className="rounded-xl border border-border bg-background shadow-sm">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold">Активный провайдер</h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -190,6 +193,7 @@ export function AdminPanel() {
           )}
         </div>
       </section>
+      </div>
     );
   }
 
