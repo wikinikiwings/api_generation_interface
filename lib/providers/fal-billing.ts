@@ -14,6 +14,8 @@ export type FalBalanceResult =
 
 function getAdminKey(): string | null {
   const k = process.env.FAL_ADMIN_KEY;
+  // Treat the .env.example placeholder as unconfigured — an unedited example
+  // file must not be sent to the billing API.
   if (!k || k === "your-fal-admin-key-here") return null;
   return k;
 }

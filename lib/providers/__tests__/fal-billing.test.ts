@@ -14,6 +14,13 @@ describe("getFalBalance", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("not_configured when FAL_ADMIN_KEY is the placeholder — no network call", async () => {
+    vi.stubEnv("FAL_ADMIN_KEY", "your-fal-admin-key-here");
+    const spy = vi.spyOn(globalThis, "fetch");
+    expect(await getFalBalance()).toEqual({ status: "not_configured" });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it("ok: maps credits and sends Key auth + expand=credits", async () => {
     vi.stubEnv("FAL_ADMIN_KEY", "admin-tok");
     const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -39,7 +46,7 @@ describe("getFalBalance", () => {
     vi.stubEnv("FAL_ADMIN_KEY", "admin-tok");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("boom", { status: 500 }));
     const r = await getFalBalance();
-    expect(r.status).toBe("error");
+    expect(r).toMatchObject({ status: "error", message: expect.any(String) });
   });
 
   it("error when fetch throws", async () => {
