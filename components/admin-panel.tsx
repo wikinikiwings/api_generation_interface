@@ -18,6 +18,7 @@ import { UsersTab } from "@/components/admin/users-tab";
 import { ModelsTab } from "@/components/admin/models-tab";
 import { PreviewStateTab } from "@/components/admin/preview-state-tab";
 import { FalBalanceCard } from "@/components/admin/fal-balance-card";
+import { FalBalanceAlertConfig } from "@/components/admin/fal-balance-alert-config";
 import type { ProviderId } from "@/lib/providers/types";
 import type { ProviderMeta } from "@/lib/providers/registry";
 
@@ -98,6 +99,7 @@ export function AdminPanel() {
     return (
       <div className="space-y-6">
         <FalBalanceCard />
+        <FalBalanceAlertConfig />
         <section className="rounded-xl border border-border bg-background shadow-sm">
         <div className="border-b border-border px-5 py-4">
           <h2 className="text-base font-semibold">Активный провайдер</h2>
