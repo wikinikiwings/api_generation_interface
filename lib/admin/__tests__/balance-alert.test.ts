@@ -8,7 +8,9 @@ vi.mock("@/lib/history-db", () => ({
 const getFalBalance = vi.fn();
 vi.mock("@/lib/providers/fal-billing", () => ({ getFalBalance: () => getFalBalance() }));
 const sendSlackAlert = vi.fn();
-vi.mock("@/lib/notify/slack", () => ({ sendSlackAlert: (t: string) => sendSlackAlert(t) }));
+vi.mock("@/lib/notify/slack", () => ({ sendSlackAlert: (t: string, u: string) => sendSlackAlert(t, u) }));
+const resolveTargets = vi.fn();
+vi.mock("@/lib/admin/balance-webhooks", () => ({ resolveTargets: () => resolveTargets() }));
 
 import { decideAlert, checkBalanceAndAlert } from "@/lib/admin/balance-alert";
 
@@ -16,6 +18,7 @@ beforeEach(() => {
   for (const k of Object.keys(settings)) delete settings[k];
   getFalBalance.mockReset();
   sendSlackAlert.mockReset().mockResolvedValue(true);
+  resolveTargets.mockReset().mockReturnValue(["https://hooks.slack.com/services/A"]);
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -51,7 +54,7 @@ describe("checkBalanceAndAlert", () => {
     settings.falBalanceThreshold = "10";
     getFalBalance.mockResolvedValue({ status: "ok", balance: 4.5, currency: "USD", username: "t" });
     const r = await checkBalanceAndAlert();
-    expect(r).toEqual({ status: "ok", sent: true });
+    expect(r).toEqual({ status: "ok", sent: 1 });
     expect(sendSlackAlert).toHaveBeenCalledOnce();
     expect(settings.falBalanceAlerted).toBe("true");
   });
@@ -61,7 +64,7 @@ describe("checkBalanceAndAlert", () => {
     settings.falBalanceAlerted = "true";
     getFalBalance.mockResolvedValue({ status: "ok", balance: 4.5, currency: "USD", username: "t" });
     const r = await checkBalanceAndAlert();
-    expect(r).toEqual({ status: "ok", sent: false });
+    expect(r).toEqual({ status: "ok", sent: 0 });
     expect(sendSlackAlert).not.toHaveBeenCalled();
     expect(settings.falBalanceAlerted).toBe("true");
   });
@@ -73,5 +76,31 @@ describe("checkBalanceAndAlert", () => {
     await checkBalanceAndAlert();
     expect(sendSlackAlert).not.toHaveBeenCalled();
     expect(settings.falBalanceAlerted).toBe("false");
+  });
+
+  it("broadcasts to every resolved target and counts deliveries", async () => {
+    settings.falBalanceThreshold = "10";
+    resolveTargets.mockReturnValue([
+      "https://hooks.slack.com/services/A",
+      "https://hooks.slack.com/services/B",
+    ]);
+    getFalBalance.mockResolvedValue({ status: "ok", balance: 4, currency: "USD", username: "t" });
+    const r = await checkBalanceAndAlert();
+    expect(sendSlackAlert).toHaveBeenCalledTimes(2);
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.any(String), "https://hooks.slack.com/services/A");
+    expect(sendSlackAlert).toHaveBeenCalledWith(expect.any(String), "https://hooks.slack.com/services/B");
+    expect(r).toEqual({ status: "ok", sent: 2 });
+  });
+
+  it("counts only successful deliveries", async () => {
+    settings.falBalanceThreshold = "10";
+    resolveTargets.mockReturnValue([
+      "https://hooks.slack.com/services/A",
+      "https://hooks.slack.com/services/B",
+    ]);
+    sendSlackAlert.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    getFalBalance.mockResolvedValue({ status: "ok", balance: 4, currency: "USD", username: "t" });
+    const r = await checkBalanceAndAlert();
+    expect(r).toEqual({ status: "ok", sent: 1 });
   });
 });
