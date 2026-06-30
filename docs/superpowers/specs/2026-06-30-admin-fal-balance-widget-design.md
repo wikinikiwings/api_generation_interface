@@ -117,3 +117,26 @@ billing/balance read; separate from `FAL_KEY` (inference).
   abstraction (YAGNI).
 - Spend history / usage charts.
 - Caching / polling.
+
+## Future direction (NOT this spec): per-employee spend
+
+Requested as a follow-up: show cost per employee. Key constraint — the fal
+billing API is **account-level only**; it does not break spend down by our
+users (fal has no concept of our "employees"). Per-employee spend must be
+computed on OUR side from the `generations` table, which already carries
+`user_id` + `model_id` + `status` + `created_at` (the same dimension the admin
+users/models tabs aggregate, now backed by covering indexes). What's missing is
+a **cost** dimension. Two attribution paths to weigh when it's specced:
+
+1. **Per-model price table** (+ resolution / image-count multipliers) stored in
+   `models` or config; spend = Σ over a user's generations. Cheap (counts +
+   indexes already exist), approximate, must track fal's prices. fal's
+   `pricing/estimate` endpoint can help seed/reconcile prices.
+2. **Actual per-generation cost** recorded at generation time — requires
+   verifying whether fal returns a cost figure in the inference response
+   (currently `lib/providers/fal.ts` does not read one) and a `cost` column on
+   `generations`. More accurate but forward-only (historical rows can't be
+   back-filled without prices).
+
+This is a separate future feature (own spec: schema change for cost, price
+table, per-user UI breakdown) — feasible, but not part of the balance widget.
