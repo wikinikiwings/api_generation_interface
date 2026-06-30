@@ -17,6 +17,10 @@ export function FalBalanceCard() {
     setLoading(true);
     try {
       const r = await fetch("/api/admin/fal-balance", { cache: "no-store" });
+      if (!r.ok) {
+        setData({ status: "error", message: `HTTP ${r.status}` });
+        return;
+      }
       setData((await r.json()) as Balance);
     } catch {
       setData({ status: "error", message: "network error" });
