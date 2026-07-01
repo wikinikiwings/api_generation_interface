@@ -14,9 +14,10 @@ import { MODELS_META } from "@/lib/providers/models";
 import type { ModelId } from "@/lib/providers/types";
 import { useUser } from "@/app/providers/user-provider";
 import { useQuotas } from "@/app/providers/quotas-provider";
-import { fileToThumbnail, uuid, dataUrlToBlob } from "@/lib/utils";
+import { fileToThumbnail, uuid } from "@/lib/utils";
 import { createImageVariants } from "@/lib/image-variants";
 import { uploadHistoryEntry, UploadError } from "@/lib/history-upload";
+import { buildInputUploadBlobs } from "@/lib/history/input-blobs";
 import { extractServerUuid } from "@/lib/history-urls";
 import { cacheBlob } from "@/lib/image-cache";
 import { composeFinalPrompt } from "@/lib/styles/inject";
@@ -343,23 +344,14 @@ export function GenerateForm({ styles }: GenerateFormProps) {
         ),
       });
 
-      // Per input image: full optimized File (the bytes sent to the provider →
-      // faithful restore source) + the 240px thumbnail we already produced
-      // (cheap list display). Index-aligned. Thumbnail decode failures drop
-      // that one entry rather than blocking the save.
-      const inputFullBlobs: Blob[] = [];
-      const inputThumbBlobs: Blob[] = [];
-      images.forEach((img, i) => {
-        const t = thumbnails[i];
-        if (typeof t !== "string" || !t.startsWith("data:")) return;
-        try {
-          const thumbBlob = dataUrlToBlob(t);
-          inputThumbBlobs.push(thumbBlob);
-          inputFullBlobs.push(img.file);
-        } catch {
-          /* skip a malformed thumbnail; keep the rest aligned */
-        }
-      });
+      // Per input image: full bytes (faithful restore source, index-aligned
+      // with the 240px thumbnail for cheap list display). Both are rebuilt
+      // from the IN-MEMORY data URLs, NOT the disk-backed `img.file` — a File
+      // reference is re-validated against the filesystem at send time and, on
+      // the long gap between drop and this post-generation upload, fails with
+      // net::ERR_UPLOAD_FILE_CHANGED (see lib/history/input-blobs).
+      const { fulls: inputFullBlobs, thumbs: inputThumbBlobs } =
+        buildInputUploadBlobs(images, thumbnails);
 
       const doUpload = () =>
         uploadHistoryEntry({
